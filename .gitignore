@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+
+# Additional .gitignore files provided by the swpp skeleton code
+Makefile
+sf-compiler
+sf-compiler-tests
+.vscode
+obj
+.tmp.s

@@ -1,7 +1,44 @@
 
 # 2020-1 SWPP Team 10 Course Project
 
-This is Team 10's code repo of the course project for [Principles and Practices of Software Development](https://github.com/snu-sf-class/swpp202001) @ [Seoul National University](https://en.snu.ac.kr/). Project collaborators are Jasmine Abtahi ([YPH95](https://github.com/YPH95)), Alfiya Mussabekova ([alphy1](https://github.com/alphy1)), Hexiang Geng ([CuriousLocky](https://github.com/CuriousLocky)) and Minghang Li ([Matchy](https://github.com/matchy233)).
+This is Team 10's code repo of the course project for [Principles and Practices of Software Development](https://github.com/snu-sf-class/swpp202001) @ [Seoul National University](https://en.snu.ac.kr/). The project is the improvement of the naive compiler provided in [snu-sf-class/swpp202001-compiler](https://github.com/snu-sf-class/swpp202001-compiler), which provides a naive compiler that converts LLVM IR to SWPP assembly.
+
+Project collaborators are Jasmine Abtahi ([YPH95](https://github.com/YPH95)), Alfiya Mussabekova ([alphy1](https://github.com/alphy1)), Hexiang Geng ([CuriousLocky](https://github.com/CuriousLocky)) and Minghang Li ([Matchy](https://github.com/matchy233)).
+
+## Build and Run the project
+
+### How to compile
+
+To compile this project, you'll need to clone & build LLVM 10.0 first.
+Please follow README.md from https://github.com/aqjune/llvmscript using
+llvm-10.0.json.
+
+After LLVM 10.0 is successfully built, please run:
+
+```bash
+./configure.sh <LLVM bin dir (ex: ~/llvm-10.0-releaseassert/bin)>
+make
+```
+
+To run tests including FileCheck and Google Test:
+
+```bash
+make test
+```
+
+### How to run
+
+Compile LLVM IR `input.ll` into an assembly `a.s` using this command:
+
+```bash
+./sf-compiler input.ll -o a.s
+```
+
+To see the IR that has registers depromoted before emitting assembly, please run:
+
+```bash
+./sf-compiler input.ll -o a.s -print-depromoted-module
+```
 
 ## Commit Message Conventions
 
@@ -37,7 +74,7 @@ The `br` instruction takes 1 penalty even if it’s unconditional. Thus, we can 
     - Comparing two constants
     - Condition value double checked in branch
     - Known value propagation through and/or
- 
+
 4. **`inline` Function**:
 If a function is not recursive, and not secretly recursive (function 1 calls function 2, and function 2 calls function 1), it’s possible to make it `inline` and save 2 penalties from call and ret.
 
@@ -58,4 +95,4 @@ If a memory space is from malloc, and it’s freed before the function returns, 
 
 - [x] Add to-dos to track project progress status
 - [x] Discuss project ideas
-- [ ] Make presentation slides (due **April 28th**)
+- [x] Make presentation slides (due **April 28th**)
