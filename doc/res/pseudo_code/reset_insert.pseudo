@@ -1,0 +1,45 @@
+
+void reset_insert(Function F):
+    for(BasicBlock B in F.blocks()):
+        for(Instruction I in B.instructions()):
+            if(!I.accessMemory()):
+                continue
+            bool prev_access_found_flag = false
+            //checking instructions in the same block
+            for(Instruction I_prev in B.instructionsBefore(I)[:-1]):
+                if(!I.accessMemory()):
+                    continue
+                prev_access_found_flag = true
+                Instruction res_ins = determin_res(I, I_prev)
+                if(res_ins != NULL):
+                    B.insertBefore(res_ins, I)
+            if(prev_access_found_flag):
+                continue
+            //if B has multiple predecessors, not travil to determine
+            //may implement in the future
+            if(B.predBlocks().size() != 1):
+                continue;
+            BasicBlock B_prev = B.predecessors()[0]
+            while(!prev_access_found_flag):
+                for(Instruction I_prev in B_prev.instructions()[:-1]):
+                    if(!I_prev.accessMemory()):
+                        continue
+                    prev_access_found_flag = true
+                    Instruction res_ins = determin_res(I, I_prev)
+                    if(res_ins != NULL):
+                        B.insertBefore(res_ins, I)
+                    break
+                if(prev_access_found_flag)
+                    break
+                if(B_prev.predecessors().size()!=1):
+                    break
+                B_prev = B_prev.predecessors()[0]
+
+Instruction determin_res(Instruction later, Instruction former):
+    MemAccPos pos_l = later.getMemAccPos()
+    MemAccPos pos_f = later.getMemAccPos()
+    if(pos_l == MemAccPos.STACK && pos_f == MemAccPos.HEAP):
+        return Instruction.RESET_STACK
+    if(pos_l == MemAccPos.HEAP && pos_f == MemAccPos.STACK):
+        return Instruction.RESET_HEAP
+    return NULL
