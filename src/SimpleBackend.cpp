@@ -45,6 +45,7 @@ private:
   map<Argument *, Argument *> ArgMap;
   map<BasicBlock *, BasicBlock *> BBMap;
   map<Instruction *, AllocaInst *> RegToAllocaMap;
+  map<PHINode *, AllocaInst *> PhiToTempAllocaMap;
 
   void raiseError(Instruction &I) {
     errs() << "DepromoteRegisters: Unsupported Instruction: " << I << "\n";
@@ -210,6 +211,11 @@ public:
           checkSrcType(Ty);
           RegToAllocaMap[&*I] =
             IB.CreateAlloca(SrcToTgtType(Ty), nullptr, I->getName() + "_slot");
+          if (auto *PN = dyn_cast<PHINode>(&*I)) {
+            PhiToTempAllocaMap[PN] =
+              IB.CreateAlloca(SrcToTgtType(Ty), nullptr,
+                              I->getName() + "_phi_tmp_slot");
+          }
         }
       }
     }
@@ -402,10 +408,10 @@ public:
     uint64_t bw = SI.getOperand(0)->getType()->getIntegerBitWidth();
     auto *Op = translateSrcOperandToTgt(SI.getOperand(0), 1);
     auto *AndVal =
-      Builder->CreateAnd(Op, (1llu << (bw - 1)), assemblyRegisterName(1));
+      Builder->CreateAnd(Op, (1llu << (bw - 1)), assemblyRegisterName(2));
     auto *NegVal =
       Builder->CreateSub(ConstantInt::get(I64Ty, 0), AndVal,
-                         assemblyRegisterName(1));
+                         assemblyRegisterName(2));
     auto *ResVal =
       Builder->CreateOr(NegVal, Op, assemblyRegisterName(1));
     emitStoreToSrcRegister(ResVal, &SI);
@@ -500,10 +506,38 @@ public:
   }
 
   void processPHIsInSuccessor(BasicBlock *Succ, BasicBlock *BBFrom) {
-    for (auto &PHI : Succ->phis())
-      emitStoreToSrcRegister(
-        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), 1),
-        &PHI);
+    // PHIs can use each other:
+    // ex)
+    // loop:
+    //   x = phi [0, entry] [y, loop] // y from the prev. iteration
+    //   y = phi [1, entry] [x, loop] // x from the prev. iteration
+    //   ...
+    //   br label %loop
+    //
+    // This should be lowered into:
+    // loop:
+    //   (value x is 'load x_slot')
+    //   (value y is 'load y_slot')
+    //   ...
+    //   store y, x_phi_tmp_slot
+    //   store x, y_phi_tmp_slot
+    //   store (load x_phi_tmp_slot), x_slot
+    //   store (load y_phi_tmp_slot), y_slot
+    for (auto &PHI : Succ->phis()) {
+      auto *V =
+        translateSrcOperandToTgt(PHI.getIncomingValueForBlock(BBFrom), 1);
+      checkTgtType(V->getType());
+      assert(!isa<Instruction>(V) || !V->hasName() ||
+             V->getName().startswith("__r"));
+      assert(PhiToTempAllocaMap.count(&PHI));
+      Builder->CreateStore(V, PhiToTempAllocaMap[&PHI]);
+    }
+    for (auto &PHI : Succ->phis()) {
+      assert(RegToAllocaMap.count(&PHI));
+      Builder->CreateStore(
+        Builder->CreateLoad(PhiToTempAllocaMap[&PHI], assemblyRegisterName(1)),
+        RegToAllocaMap[&PHI]);
+    }
   }
 
 
