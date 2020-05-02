@@ -17,7 +17,7 @@ This is the requirement and specification document for Team 10 that describes th
 
 #### Description
 
-The SWPP machine has a very weird ISA, which makes some arithmetic instructions costier than others. By replacing the rather costly instructions with cheaper ones we can save the cost up to 50%. The instructions to be replaced are listed as follows.
+The SWPP machine has a very weird ISA, which makes some (usually not-so-costly) arithmetic instructions costier than others. By replacing the rather costly instructions with cheaper ones we can save the cost up to 50%. The instructions to be replaced are listed as follows.
 
 | Instruction | Replacable Instruction | Saved Cost |
 |---|:---:|---:|
@@ -31,7 +31,9 @@ The SWPP machine has a very weird ISA, which makes some arithmetic instructions 
 ```python
 for each use of Instruction i in input.ll
     if Instruction i matches with Pattern p at index j
-     replace the use with replacable Instruction r at index j
+        replace the use with replacable Instruction r at index j
+    end
+end
 ```
 
 #### Example IR
@@ -67,7 +69,7 @@ for each use of Instruction i in input.ll
 
 The SWPP machine has a tape-like memory with no random access support. Therefore, the cost of moving along the tape is considerable, especially whilst accessing heap memory and stack memory interleavingly.
 
-However, there're `reset heap` and `reset stack` instructions provided, with a fixed cost of `2`, which is equivalent to moving the read head a disteance of `5000`. Since the distance between `10240` (stack starting address) and `20480` (heap starting address) is obviously larger than `5000`, it would always be more efficient to `reset` when you want to access heap after stack (or vice versa). 
+However, there's a `reset [stack|heap]` instruction provided, with a fixed cost of `2`, which is equivalent to moving the tap-access head a disteance of `5000`. Since the distance between `10240` (stack starting address) and `20480` (heap starting address) is obviously larger than `5000`, it would always be more efficient to `reset` when you want to access heap after stack (or vice versa).
 
 #### Algorithmic Implementation
 
@@ -88,10 +90,10 @@ void reset_insert(Function F):
                     B.insertBefore(res_ins, I)
             if(prev_access_found_flag):
                 continue
-            //if B has multiple predecessors, not travil to determine
-            //may implement in the future
+            // if B has multiple predecessors, not travil to determine
+            // may implement in the future
             if(B.predBlocks().size() != 1):
-                continue;
+                continue
             BasicBlock B_prev = B.predecessors()[0]
             while(!prev_access_found_flag):
                 for(Instruction I_prev in B_prev.instructions()[:-1]):
@@ -120,7 +122,7 @@ Instruction determin_res(Instruction later, Instruction former):
 
 #### Example IR
 
-**Case 1**：Resetting stack
+**Case 1**：Stack visited, heap to-visit
 
 Before
 
@@ -152,7 +154,7 @@ define i32 @main(i32 %x){
 }
 ```
 
-**Case 2**: Resetting heap
+**Case 2**: Heap visited, stack to-visit
 
 Before
 
@@ -183,32 +185,110 @@ define i32 @main(i32 %x){
     ... ;some other code
 }
 ```
+**Case 3**: Unknown visited / to-visit (Optimization not applied)
+
+Before
+
+```llvm
+define i32 @main(i32* %x){
+    %b = load i32, i32* %x
+
+    ... ;some instructions that dont access memory
+
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some other code
+}
+```
+
+After
+
+```llvm
+define i32 @main(i32* %x){
+    %b = load i32, i32* %x
+
+    ... ;some instructions that dont access memory
+
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some other code
+}
+```
 
 ### `malloc` to `alloca`
 
 #### Description
 
- malloc that's freed before returnning
- && size is small (standard to be discussed)
-  change to alloca
+Observe that `malloc` is costlier than `alloca`. If the memory chunk allocated by `malloc` is freed before returning, in essence it is equivalent to allocating on the stack. Therefore, we can convert `malloc` to `alloca` under this circumstance. Note that the stack space is significantly small, so a threshold of allocated size should be set to prevent stack overflow.
 
 #### Algorithmic Implementation
 
+```c++
+// Find all malloc variables
+vector <Instruction> mall;
+for (BasicBlock BB : F)
+    for (Instruction I : BB) {
+        if I matches malloc
+            add to mall
+    }
+// Check whether the instruction is freed before end of function, if not, remove
+bool flag = true
+foreach m in mall {
+    for (BasicBlock BB : F)
+        for (Instruction I : BB) {
+            if I matches free and m in arguments
+                flag = false
+            }
+    if (flag)
+        remove m from mall
+}
+// for each instruction in mall change malloc to alloca
+foreach m in mall {
+    change malloc to alloca
+}
+```
+
 #### Example IR
+
+```llvm
+; Before optimization
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    call void @free(i8* %malloc_var)
+    ret 0
+}
+```
+```llvm
+; After optimization
+define i32 @f(i32 %x, i32 %y) {
+    %alloca_var = alloca %i32
+    ...
+    ret 0
+}
+```
 
 ### Existing LLVM optimization
 
 #### Description
 
- dead argument elimination
- function inlining
- tail call elimination
- constant folding
+According to `optList.md`, there are some existing optimization options provided by the LLVM framework such as: dead argument elimination, function inlining, tail call elimination and constant folding. We would like to use them in our compiler.
 
-#### Algorithmic Implementation
+This part would be mainly utilizing existing passes and libraries. The difficulty, procedure and output of the integration cannot be evaluated for now. What's more, there are multiple optimization options to integrate. Hence, no pseudocode or sample IRs will be provided.
 
-#### Example IR
+Existing optimization to be integrated in Sprint 1:
+
+* Function inlining
+* Dead argument elimination
+* Constant folding
+
 
 ## Sprint 2 Optimization
 
+To be updated.
+
 ## Sprint 3 Optimization
+
+To be updated.
