@@ -52,3 +52,29 @@ define i32 @main(i32 %x){
 
     ... ;some other code
 }
+
+//target program example 3:
+//Note that the location of the argument pointer is unknown
+//original:
+define i32 @main(i32* %x){
+    %b = load i32, i32* %x
+
+    ... ;some instructions that dont access memory
+    
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some other code
+}
+
+//after opt:
+define i32 @main(i32* %x){
+    %b = load i32, i32* %x
+
+    ... ;some instructions that dont access memory
+    
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some other code
+}
