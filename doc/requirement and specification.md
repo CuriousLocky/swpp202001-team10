@@ -252,8 +252,11 @@ foreach m in mall {
 
 #### Example IR
 
+**Case 1**: Optimiztion applied
+
+Before
+
 ```llvm
-; Before optimization
 define i32 @f(i32 %x, i32 %y) {
     %malloc_var = call i8* @malloc(i32 4)
     ...
@@ -261,10 +264,53 @@ define i32 @f(i32 %x, i32 %y) {
     ret 0
 }
 ```
+After
+
 ```llvm
-; After optimization
 define i32 @f(i32 %x, i32 %y) {
     %alloca_var = alloca %i32
+    ...
+    ret 0
+}
+```
+
+**Case 2**: `malloc` is not freed, no replace
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    ret 0
+}
+```
+After
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    ret 0
+}
+```
+
+**Case 3**: `malloc` size is larger than 10240 (maximum stack size) -> no replace
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 10244)
+    ...
+    ret 0
+}
+```
+
+After
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 10244)
     ...
     ret 0
 }
