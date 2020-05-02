@@ -23,6 +23,7 @@ foreach m in mall {
     change malloc to alloca
 }
 Example
+; Case where we need to replace malloc to alloca
 ; Before optimization
 define i32 @f(i32 %x, i32 %y) {
     %malloc_var = call i8* @malloc(i32 4)
@@ -33,6 +34,36 @@ define i32 @f(i32 %x, i32 %y) {
 ; After optimization
 define i32 @f(i32 %x, i32 %y) {
     %alloca_var = alloca %i32
+    ...
+    ret 0
+}
+
+
+; Case where malloc is not being freed -> no replace
+; Before optimization
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    ret 0
+}
+; After optimization
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    ret 0
+}
+
+
+; Case where malloc call needs more than 10240 -> no replace
+; Before optimization
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 10244)
+    ...
+    ret 0
+}
+; After optimization
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 10244)
     ...
     ret 0
 }
