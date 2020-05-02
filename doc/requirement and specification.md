@@ -1,0 +1,214 @@
+
+This is the requirement and specification document for Team 10 that describes the optimization choices and implementation overviews.
+
+# Table of Contents
+
+* [Sprint 1 Optimization](#sprint-1-optimization)
+    * [Arithematic optimizations](#arithematic-optimizations)
+    * [Reset insertion](#reset-insertion)
+    * [`malloc` to `alloca`](#malloc-to-alloca)
+    * [Existing LLVM optimization](#existing-llvm-optimization)
+* [Sprint 2 Optimization](#sprint-2-optimization)
+* [Sprint 3 Optimization](#sprint-3-optimization)
+
+## Sprint 1 Optimization
+
+### Arithematic optimizations
+
+#### Description
+
+The SWPP machine has a very weird ISA, which makes some arithmetic instructions costier than others. By replacing the rather costly instructions with cheaper ones we can save the cost up to 50%. The instructions to be replaced are listed as follows.
+
+| Instruction | Replacable Instruction | Saved Cost |
+|---|:---:|---:|
+| `ashr` | `udiv` |    25% |
+| `shl`  | `mul`  |    25% |
+| `add`  | `mul`  |    50% |
+| `sub`  | `mul`  |    50% |
+
+#### Algorithmic Implementation
+
+```python
+for each use of Instruction i in input.ll
+    if Instruction i matches with Pattern p at index j
+     replace the use with replacable Instruction r at index j
+```
+
+#### Example IR
+
+**Case 1**: `shift` to `mul`/`div`
+``` llvm
+%1 = shl  %a, 1, 32 ;before
+%1 = mul  %a, 2, 32 ;after
+%2 = ashr %b, 1, 32 ;before
+%2 = udiv %b, 2, 32 ;after
+```
+
+**Case 2**: `add`/`sub` val with val's multiplicands to `mul`
+
+``` llvm
+%1 = add  %a, %a, 32 ;before
+%1 = mul  %a, 2,  32 ;after
+```
+**Case 3**: `add`/`sub` with zero to `mul`
+
+``` llvm
+%1 = add  %a, 0,  32 ;before
+%1 = mul  %a, 1,  32 ;after
+%2 = sub  %b, 0,  32 ;before
+%2 = mul  %b, 1,  32 ;after
+%3 = sub   0, %c, 32 ;before
+%3 = mul  -1, %c, 32 ;after
+```
+
+### Reset insertion
+
+#### Description
+
+The SWPP machine has a tape-like memory with no random access support. Therefore, the cost of moving along the tape is considerable, especially whilst accessing heap memory and stack memory interleavingly.
+
+However, there're `reset heap` and `reset stack` instructions provided, with a fixed cost of `2`, which is equivalent to moving the read head a disteance of `5000`. Since the distance between `10240` (stack starting address) and `20480` (heap starting address) is obviously larger than `5000`, it would always be more efficient to `reset` when you want to access heap after stack (or vice versa). 
+
+#### Algorithmic Implementation
+
+```c++
+void reset_insert(Function F):
+    for(BasicBlock B in F.blocks()):
+        for(Instruction I in B.instructions()):
+            if(!I.accessMemory()):
+                continue
+            bool prev_access_found_flag = false
+            //checking instructions in the same block
+            for(Instruction I_prev in B.instructionsBefore(I)[:-1]):
+                if(!I.accessMemory()):
+                    continue
+                prev_access_found_flag = true
+                Instruction res_ins = determin_res(I, I_prev)
+                if(res_ins != NULL):
+                    B.insertBefore(res_ins, I)
+            if(prev_access_found_flag):
+                continue
+            //if B has multiple predecessors, not travil to determine
+            //may implement in the future
+            if(B.predBlocks().size() != 1):
+                continue;
+            BasicBlock B_prev = B.predecessors()[0]
+            while(!prev_access_found_flag):
+                for(Instruction I_prev in B_prev.instructions()[:-1]):
+                    if(!I_prev.accessMemory()):
+                        continue
+                    prev_access_found_flag = true
+                    Instruction res_ins = determin_res(I, I_prev)
+                    if(res_ins != NULL):
+                        B.insertBefore(res_ins, I)
+                    break
+                if(prev_access_found_flag)
+                    break
+                if(B_prev.predecessors().size()!=1):
+                    break
+                B_prev = B_prev.predecessors()[0]
+
+Instruction determin_res(Instruction later, Instruction former):
+    MemAccPos pos_l = later.getMemAccPos()
+    MemAccPos pos_f = later.getMemAccPos()
+    if(pos_l == MemAccPos.STACK && pos_f == MemAccPos.HEAP):
+        return Instruction.RESET_STACK
+    if(pos_l == MemAccPos.HEAP && pos_f == MemAccPos.STACK):
+        return Instruction.RESET_HEAP
+    return NULL
+```
+
+#### Example IR
+
+**Case 1**：Resetting stack
+
+Before
+
+```llvm
+define i32 @main(i32 %x){
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some instructions that dont access memory
+
+    %b = alloca i32, i32 4
+
+    ... ;some other code
+}
+```
+After
+
+```llvm
+define i32 @main(i32 %x){
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some instructions that dont access memory
+
+    reset stack
+    %b = alloca i32, i32 4
+
+    ... ;some other code
+}
+```
+
+**Case 2**: Resetting heap
+
+Before
+
+```llvm
+define i32 @main(i32 %x){
+    %b = alloca i32, i32 4
+
+    ... ;some instructions that dont access memory
+
+    %a = call i32* @malloc(i32 8)
+    store i32 3, i32* %ptr
+
+    ... ;some other code
+}
+```
+After
+
+```llvm
+define i32 @main(i32 %x){
+    %b = alloca i32, i32 4
+
+    ... ;some instructions that dont access memory
+
+    %a = call i32* @malloc(i32 8)
+    reset heap
+    store i32 3, i32* %ptr
+
+    ... ;some other code
+}
+```
+
+### `malloc` to `alloca`
+
+#### Description
+
+ malloc that's freed before returnning
+ && size is small (standard to be discussed)
+  change to alloca
+
+#### Algorithmic Implementation
+
+#### Example IR
+
+### Existing LLVM optimization
+
+#### Description
+
+ dead argument elimination
+ function inlining
+ tail call elimination
+ constant folding
+
+#### Algorithmic Implementation
+
+#### Example IR
+
+## Sprint 2 Optimization
+
+## Sprint 3 Optimization
