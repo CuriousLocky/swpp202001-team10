@@ -191,7 +191,7 @@ private:
   }
 
   void emitBasicBlockStart(const string &name) {
-    FnBody.push_back("." + name + ":");
+    FnBody.push_back(name + ":");
   }
 
   // If V is a register or constant, return its name.
@@ -211,8 +211,15 @@ private:
     } else if (isa<ConstantPointerNull>(V)) {
       return { "0", -1 };
 
-    } else if (isa<GlobalVariable>(V)) {
-      assert(false && "Global variable isn't supported yet. :(");
+    } else if (auto *CE = dyn_cast<ConstantExpr>(V)) {
+      if (CE->getOpcode() == Instruction::IntToPtr) {
+        auto *CI = dyn_cast<ConstantInt>(CE->getOperand(0));
+        if (CI)
+          return { to_string(*CI), -1 };
+        else
+          assert(false && "Unknown inttoptr form");
+      }
+      assert(false && "Unknown constantexpr");
 
     } else if (auto *I = dyn_cast<Instruction>(V)) {
       if (isa<TruncInst>(I)) {
@@ -420,7 +427,7 @@ public:
   }
   void visitBranchInst(BranchInst &BI) {
     if (BI.isUnconditional()) {
-      emitAssembly("br", {"." + (string)BI.getSuccessor(0)->getName()});
+      emitAssembly("br", {(string)BI.getSuccessor(0)->getName()});
     } else {
       string msg = "Branch condition should be icmp ne";
       auto *BCond = BI.getCondition();
@@ -433,8 +440,8 @@ public:
       raiseErrorIf(!ShouldBeZero || ShouldBeZero->getZExtValue() != 0, msg, BCond);
 
       auto [Cond, _] = getOperand(II->getOperand(0));
-      emitAssembly("br", { Cond, "." + (string)BI.getSuccessor(0)->getName(),
-                                 "." + (string)BI.getSuccessor(1)->getName()});
+      emitAssembly("br", { Cond, (string)BI.getSuccessor(0)->getName(),
+                                 (string)BI.getSuccessor(1)->getName()});
     }
   }
   void visitSwitchInst(SwitchInst &SI) {
