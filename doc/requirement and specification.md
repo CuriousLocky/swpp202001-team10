@@ -252,8 +252,16 @@ foreach m in mall {
 
 #### Example IR
 
+<<<<<<< HEAD
 ```llvm
 ; Before optimization
+=======
+**Case 1**: Optimiztion applied
+
+Before
+
+```llvm
+>>>>>>> b495920... Update CRLF with LF
 define i32 @f(i32 %x, i32 %y) {
     %malloc_var = call i8* @malloc(i32 4)
     ...
@@ -261,8 +269,14 @@ define i32 @f(i32 %x, i32 %y) {
     ret 0
 }
 ```
+<<<<<<< HEAD
 ```llvm
 ; After optimization
+=======
+After
+
+```llvm
+>>>>>>> b495920... Update CRLF with LF
 define i32 @f(i32 %x, i32 %y) {
     %alloca_var = alloca %i32
     ...
@@ -270,6 +284,51 @@ define i32 @f(i32 %x, i32 %y) {
 }
 ```
 
+<<<<<<< HEAD
+=======
+**Case 2**: `malloc` is not freed, no replace
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    ret 0
+}
+```
+After
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 4)
+    ...
+    ret 0
+}
+```
+
+**Case 3**: `malloc` size is larger than 10240 (maximum stack size) -> no replace
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 10244)
+    ...
+    ret 0
+}
+```
+
+After
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var = call i8* @malloc(i32 10244)
+    ...
+    ret 0
+}
+```
+
+>>>>>>> b495920... Update CRLF with LF
 ### Existing LLVM optimization
 
 #### Description
