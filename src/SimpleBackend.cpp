@@ -240,14 +240,16 @@ public:
           }
         }
       }
-      // Let's create a malloc for each global var.
-      // This is dummy register.
-      string Reg1 = assemblyRegisterName(1);
-      for (auto &[_, Size] : GVLocs) {
-        auto *ArgTy =
-          dyn_cast<IntegerType>(MallocFn->getFunctionType()->getParamType(0));
-        assert(ArgTy);
-        IB.CreateCall(MallocFn, {ConstantInt::get(ArgTy, Size)}, Reg1);
+      if (FuncToEmit->getName() == "main") {
+        // Let's create a malloc for each global var.
+        // This is dummy register.
+        string Reg1 = assemblyRegisterName(1);
+        for (auto &[_, Size] : GVLocs) {
+          auto *ArgTy =
+            dyn_cast<IntegerType>(MallocFn->getFunctionType()->getParamType(0));
+          assert(ArgTy);
+          IB.CreateCall(MallocFn, {ConstantInt::get(ArgTy, Size)}, Reg1);
+        }
       }
     }
 
