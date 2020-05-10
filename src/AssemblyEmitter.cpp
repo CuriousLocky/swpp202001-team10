@@ -402,6 +402,16 @@ public:
     string FnName = (string)CI.getCalledFunction()->getName();
     vector<string> Args;
     bool MallocOrFree = true;
+    if(FnName=="resetStack"){
+      Args.emplace_back("stack");
+      emitAssembly("reset", Args);
+      return;
+    }
+    if(FnName=="resetHeap"){
+      Args.emplace_back("heap");
+      emitAssembly("reset", Args);
+      return;
+    }
     if (FnName != "malloc" && FnName != "free") {
       MallocOrFree = false;
       Args.emplace_back(FnName);
