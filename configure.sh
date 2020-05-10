@@ -19,6 +19,7 @@ SRCROOT=`$LLVMCONFIG --src-root`
 CXXFLAGS="$CXXFLAGS -std=c++17 -g -I${SRCROOT}/include ${ISYSROOT}"
 CXXFLAGS="$CXXFLAGS -I${SRCROOT}/utils/unittest/googletest/include"
 CXXFLAGS="$CXXFLAGS -I${SRCROOT}/utils/unittest/googletest/"
+CXXFLAGS="$CXXFLAGS -I./include/"
 
 GTESTSRC="${SRCROOT}/utils/unittest/googletest/src/gtest-all.cc"
 
