@@ -257,7 +257,6 @@ foreach m in mall {
 Before
 
 ```llvm
->>>>>>> b495920... Update CRLF with LF
 define i32 @f(i32 %x, i32 %y) {
     %malloc_var = call i8* @malloc(i32 4)
     ...

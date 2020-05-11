@@ -64,6 +64,6 @@ See [project/optList.md](project/spec.pdf) for possible optimization opitions.
 - [x] Add to-dos to track project progress status -- Matchy
 - [x] Discuss project ideas -- All
 - [x] Make presentation slides (due **April 28th**) -- All
-- [ ] Wrtie documentation (due **May 2nd**) -- Matchy
+- [x] Wrtie documentation (due **May 2nd**) -- Matchy
 - [ ] Learn Travis-CI -- Matchy
 - [ ] Learn how to add badges to README.md -- Matchy
