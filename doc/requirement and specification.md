@@ -252,10 +252,6 @@ foreach m in mall {
 
 #### Example IR
 
-<<<<<<< HEAD
-```llvm
-; Before optimization
-=======
 **Case 1**: Optimiztion applied
 
 Before
@@ -269,14 +265,9 @@ define i32 @f(i32 %x, i32 %y) {
     ret 0
 }
 ```
-<<<<<<< HEAD
-```llvm
-; After optimization
-=======
 After
 
 ```llvm
->>>>>>> b495920... Update CRLF with LF
 define i32 @f(i32 %x, i32 %y) {
     %alloca_var = alloca %i32
     ...
@@ -284,8 +275,6 @@ define i32 @f(i32 %x, i32 %y) {
 }
 ```
 
-<<<<<<< HEAD
-=======
 **Case 2**: `malloc` is not freed, no replace
 
 Before
@@ -328,7 +317,6 @@ define i32 @f(i32 %x, i32 %y) {
 }
 ```
 
->>>>>>> b495920... Update CRLF with LF
 ### Existing LLVM optimization
 
 #### Description
