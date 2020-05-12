@@ -8,11 +8,18 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 
+/*****************************************************************************/
+/***************** Include new header files in this section ******************/
+/*****************************************************************************/
+#include "llvm/Transforms/IPO/DeadArgumentElimination.h"
+#include "llvm/Transforms/IPO/Inliner.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+/*****************************************************************************/
+
 #include <string>
 
 using namespace std;
 using namespace llvm;
-
 
 static cl::OptionCategory optCategory("SWPP Compiler options");
 
@@ -75,6 +82,7 @@ int main(int argc, char **argv) {
   CGSCCAnalysisManager CGAM;
   ModuleAnalysisManager MAM;
   PassBuilder PB;
+
   // Register all the basic analyses with the managers.
   PB.registerModuleAnalyses(MAM);
   PB.registerCGSCCAnalyses(CGAM);
@@ -82,17 +90,26 @@ int main(int argc, char **argv) {
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-
+  // Function-level pass
   FunctionPassManager FPM;
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
-  FPM.addPass(DoNothingPass());
+  FPM.addPass(GVN());
+
+  // CGSCC-level pass
+  CGSCCPassManager CGPM;
+  CGPM.addPass(InlinerPass());
 
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
+  MPM.addPass(DeadArgumentEliminationPass());
   MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
 
   // Run!
+  for (auto &F : (*M).getFunctionList()) {
+    FPM.run(F, FAM);
+  }
+
   MPM.run(*M, MAM);
 
   return 0;
