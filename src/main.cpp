@@ -101,14 +101,10 @@ int main(int argc, char **argv) {
 
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
   MPM.addPass(DeadArgumentEliminationPass());
   MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
-
-  // Run!
-  for (auto &F : (*M).getFunctionList()) {
-    FPM.run(F, FAM);
-  }
 
   MPM.run(*M, MAM);
 
