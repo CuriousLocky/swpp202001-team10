@@ -52,18 +52,6 @@ static unique_ptr<Module> openInputFile(LLVMContext &Context,
   return M;
 }
 
-
-class DoNothingPass : public llvm::PassInfoMixin<DoNothingPass> {
-  std::string outputFile;
-
-public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
-    //outs() << "Hi! " << F.getName() << "\n";
-    return PreservedAnalyses::all();
-  }
-};
-
-
 int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal(argv[0]);
   PrettyStackTraceProgram X(argc, argv);
