@@ -11,6 +11,8 @@
 #include <sstream>
 #include <memory>
 
+#include "allocType.h"
+
 using namespace llvm;
 using namespace std;
 
@@ -35,12 +37,16 @@ private:
   IntegerType *I64Ty;
   IntegerType *I1Ty;
   PointerType *I8PtrTy;
+  Type* VoidTy;
 
   unique_ptr<Module> ModuleToEmit;
   Function *FuncToEmit = nullptr;
   BasicBlock *BBToEmit = nullptr;
   unique_ptr<IRBuilder<TargetFolder>> Builder;
   Function *MallocFn = nullptr;
+
+  Function *resetHeapFn = nullptr;
+  Function *resetStackFn = nullptr;
 
   map<Function *, Function *> FuncMap;
   map<GlobalVariable *, Constant *> GVMap; // Global var to 'inttoptr i'
@@ -139,7 +145,28 @@ private:
     }
   }
 
+  string getUniqueName(string nameBase, Module &M){
+    for(Function &F : M){
+      if(F.getName() == nameBase){
+        return getUniqueName(nameBase+"_", M);
+      }
+    }
+    return nameBase;
+  }
+
 public:
+  Function* getResetHeap(){
+    return resetHeapFn;
+  }
+
+  Function* getResetStack(){
+    return resetStackFn;
+  }
+
+  IRBuilder<TargetFolder> *getBuilder(){
+    return Builder.get();
+  }
+
   Module *getDepromotedModule() const
   { return ModuleToEmit.get(); }
 
@@ -149,7 +176,17 @@ public:
     I64Ty = IntegerType::getInt64Ty(*Context);
     I1Ty = IntegerType::getInt1Ty(*Context);
     I8PtrTy = PointerType::getInt8PtrTy(*Context);
+    VoidTy = Type::getVoidTy(*Context);
     ModuleToEmit->setDataLayout(M.getDataLayout());
+
+    string resetHeapName = getUniqueName("resetHeap", M);
+    string resetStackName = getUniqueName("resetStack", M);
+
+    FunctionType *resetHeapTy = FunctionType::get(VoidTy, {VoidTy}, false);
+    resetHeapFn = Function::Create(resetHeapTy, Function::ExternalLinkage, resetHeapName, *ModuleToEmit);
+
+    FunctionType *resetStackTy = FunctionType::get(VoidTy, {VoidTy}, false);
+    resetStackFn = Function::Create(resetStackTy, Function::ExternalLinkage, resetStackName, *ModuleToEmit);
 
     uint64_t GVOffset = 20480;
     FunctionType *MallocTy = nullptr;
@@ -624,6 +661,33 @@ public:
   }
 };
 
+static void insert_reset(BasicBlock &B, AllocType lastVisit, Function* rstH, Function* rstS){
+  for(Instruction &I : B.getInstList()){
+    AllocType nowVisit = UNKNOWN;
+    AllocType nowVisit_temp = UNKNOWN;
+    for(int i = 0, e = I.getNumOperands(); i < e; i++){
+      Value* V = I.getOperand(i);
+       AllocType nowVisit_temp_temp = getBlockType(V);
+       if(nowVisit_temp_temp!=UNKNOWN){
+         nowVisit_temp = nowVisit_temp_temp;
+       }
+    }
+    nowVisit = nowVisit_temp;
+    IRBuilder<> builder(&I);
+    if(lastVisit != UNKNOWN && lastVisit != nowVisit){
+      if(nowVisit==STACK){
+        //B.getInstList().insert(I, Builder->CreateCall(rstS, {}));
+        builder.CreateCall(rstS, {});
+      }else if(nowVisit==HEAP){
+        builder.CreateCall(rstH, {});
+      }      
+    }
+    lastVisit = nowVisit;       
+  }
+  for(int i = 0; i < B.getTerminator()->getNumSuccessors(); i++){
+    insert_reset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS);
+  }
+}
 
 PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
   if (verifyModule(M, &errs(), nullptr))
@@ -647,6 +711,14 @@ PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
     exit(1);
   }
 
+  Module* depromotedModule = Deprom.getDepromotedModule();
+  for(Function &F : depromotedModule->getFunctionList()){
+    if(F.isDeclaration()){
+      continue;
+    }
+    BasicBlock &BBEntry = F.getEntryBlock();
+    insert_reset(BBEntry, UNKNOWN, Deprom.getResetHeap(), Deprom.getResetStack());
+  }
   // For debugging, this will print the depromoted module.
   if (printDepromotedModule)
     Deprom.dumpToStdOut();
@@ -661,7 +733,8 @@ PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
     exit(1);
   }
 
-  AssemblyEmitter Emitter(os);
+
+  AssemblyEmitter Emitter(os, Deprom.getResetHeap()->getName(), Deprom.getResetStack()->getName());
   Emitter.run(Deprom.getDepromotedModule());
 
   if (os != &outs()) delete os;

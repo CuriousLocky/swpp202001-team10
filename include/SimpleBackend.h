@@ -19,8 +19,14 @@ public:
 
 class AssemblyEmitter {
   llvm::raw_ostream *fout;
+  std::string rstHName;
+  std::string rstSName;
 public:
-  AssemblyEmitter(llvm::raw_ostream *fout) : fout(fout) {}
+  AssemblyEmitter(llvm::raw_ostream *fout, std::string rstHName, std::string rstSName):
+    fout(fout),
+    rstHName(rstHName),
+    rstSName(rstSName)
+    {}
   void run(llvm::Module *M);
 };
 

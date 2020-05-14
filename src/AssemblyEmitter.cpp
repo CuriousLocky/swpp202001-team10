@@ -161,6 +161,8 @@ class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
   vector<string> FnBody;
   StackFrame CurrentStackFrame;
+  string rstHName;
+  string rstSName;
 
 private:
   // ----- Emit functions -----
@@ -249,7 +251,10 @@ private:
 
 
 public:
-  AssemblyEmitterImpl() {}
+  AssemblyEmitterImpl(string rstHName, string rstSName):
+    rstHName(rstHName),
+    rstSName(rstSName)
+   {}
 
   void visitFunction(Function &F) {
     CurrentStackFrame = StackFrame();
@@ -402,12 +407,12 @@ public:
     string FnName = (string)CI.getCalledFunction()->getName();
     vector<string> Args;
     bool MallocOrFree = true;
-    if(FnName=="resetStack"){
+    if(FnName==rstSName){
       Args.emplace_back("stack");
       emitAssembly("reset", Args);
       return;
     }
-    if(FnName=="resetHeap"){
+    if(FnName==rstHName){
       Args.emplace_back("heap");
       emitAssembly("reset", Args);
       return;
@@ -471,7 +476,7 @@ public:
 };
 
 void AssemblyEmitter::run(Module *DepromotedM) {
-  AssemblyEmitterImpl Em;
+  AssemblyEmitterImpl Em(rstHName, rstSName);
   unsigned TotalStackUsage = 0;
   for (auto &F : *DepromotedM) {
     if (F.isDeclaration())
