@@ -9,7 +9,7 @@ using namespace llvm;
 using namespace std;
 
 namespace {
-class ArithematicOptimization : public PassInfoMixin<ArithematicOptimization> {
+class ArithmeticOptimization : public PassInfoMixin<ArithmeticOptimization> {
 
 public:
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
