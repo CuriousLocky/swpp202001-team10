@@ -661,7 +661,7 @@ public:
   }
 };
 
-static void insert_reset(BasicBlock &B, AllocType lastVisit, Function* rstH, Function* rstS){
+static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Function* rstS){
   for(Instruction &I : B.getInstList()){
     AllocType nowVisit = UNKNOWN;
     AllocType nowVisit_temp = UNKNOWN;
@@ -676,7 +676,6 @@ static void insert_reset(BasicBlock &B, AllocType lastVisit, Function* rstH, Fun
     IRBuilder<> builder(&I);
     if(lastVisit != UNKNOWN && lastVisit != nowVisit){
       if(nowVisit==STACK){
-        //B.getInstList().insert(I, Builder->CreateCall(rstS, {}));
         builder.CreateCall(rstS, {});
       }else if(nowVisit==HEAP){
         builder.CreateCall(rstH, {});
@@ -685,7 +684,7 @@ static void insert_reset(BasicBlock &B, AllocType lastVisit, Function* rstH, Fun
     lastVisit = nowVisit;       
   }
   for(int i = 0; i < B.getTerminator()->getNumSuccessors(); i++){
-    insert_reset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS);
+    insertReset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS);
   }
 }
 
@@ -717,7 +716,7 @@ PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
       continue;
     }
     BasicBlock &BBEntry = F.getEntryBlock();
-    insert_reset(BBEntry, UNKNOWN, Deprom.getResetHeap(), Deprom.getResetStack());
+    insertReset(BBEntry, UNKNOWN, Deprom.getResetHeap(), Deprom.getResetStack());
   }
   // For debugging, this will print the depromoted module.
   if (printDepromotedModule)
