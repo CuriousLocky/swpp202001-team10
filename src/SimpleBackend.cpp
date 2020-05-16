@@ -664,15 +664,15 @@ public:
 static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Function* rstS){
   for(Instruction &I : B.getInstList()){
     AllocType nowVisit = UNKNOWN;
-    AllocType nowVisit_temp = UNKNOWN;
+    AllocType lastOperandVisit = UNKNOWN;
     for(int i = 0, e = I.getNumOperands(); i < e; i++){
       Value* V = I.getOperand(i);
-       AllocType nowVisit_temp_temp = getBlockType(V);
-       if(nowVisit_temp_temp!=UNKNOWN){
-         nowVisit_temp = nowVisit_temp_temp;
+       AllocType operandVisit = getBlockType(V);
+       if(operandVisit!=UNKNOWN){
+         lastOperandVisit = operandVisit;
        }
     }
-    nowVisit = nowVisit_temp;
+    nowVisit = lastOperandVisit;
     IRBuilder<> builder(&I);
     if(lastVisit != UNKNOWN && lastVisit != nowVisit){
       if(nowVisit==STACK){
