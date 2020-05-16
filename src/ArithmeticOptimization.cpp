@@ -27,8 +27,7 @@ public:
             // assuming 0 << 0 won't occure since it's been already removed by
             // constant folding opt
             // X << 0
-            C = dyn_cast<ConstantInt>(I.getOperand(1));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(1))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -46,8 +45,7 @@ public:
               }
             }
             // 0 << X
-            C = dyn_cast<ConstantInt>(I.getOperand(0));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(0))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -60,8 +58,7 @@ public:
             // assuming 0 >> 0 won't occure since it's been already removed by
             // constant folding opt
             // X >> 0
-            C = dyn_cast<ConstantInt>(I.getOperand(1));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(1))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -79,8 +76,7 @@ public:
               }
             }
             // 0 >> X
-            C = dyn_cast<ConstantInt>(I.getOperand(0));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(0))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -102,8 +98,7 @@ public:
               break;
             }
             // 0 + X
-            C = dyn_cast<ConstantInt>(I.getOperand(0)); 
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(0))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(1));
@@ -112,8 +107,7 @@ public:
               }
             }
             // X + 0
-            C = dyn_cast<ConstantInt>(I.getOperand(1));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(1))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -133,8 +127,7 @@ public:
               break;
             }
             // 0 - X
-            C = dyn_cast<ConstantInt>(I.getOperand(0));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(0))){
               a = C->getZExtValue();
               if(a == 0){
                 C  = ConstantInt::get( I.getOperand(1)->getContext(), APInt(32, StringRef("-1"), 10));
@@ -146,8 +139,7 @@ public:
               }
             }
             // X - 0
-            C = dyn_cast<ConstantInt>(I.getOperand(1));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(1))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -168,8 +160,7 @@ public:
             }
 
             // 0 / X
-            C = dyn_cast<ConstantInt>(I.getOperand(0));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(0))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -180,8 +171,7 @@ public:
             
 
             // X / 1
-            C = dyn_cast<ConstantInt>(I.getOperand(1));
-            if(C != nullptr){
+            if(dyn_cast<ConstantInt>(I.getOperand(1))){
               a = C->getZExtValue();
               if(a == 1){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -212,8 +202,7 @@ public:
               }
               
               // X % 1
-              C = dyn_cast<ConstantInt>(I.getOperand(1));
-              if(C != nullptr){
+              if(dyn_cast<ConstantInt>(I.getOperand(1))){
                 a = C->getZExtValue();
                 if(a == 1){
                   C  = ConstantInt::get( I.getOperand(0)->getContext(), APInt(32, StringRef("0"), 10));
@@ -230,8 +219,7 @@ public:
               break;
             }
               // 0 | X
-              C = dyn_cast<ConstantInt>(I.getOperand(0)); 
-              if(C != nullptr){
+              if(dyn_cast<ConstantInt>(I.getOperand(0))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(1));
@@ -241,8 +229,7 @@ public:
               }
             
               // X | 0
-              C = dyn_cast<ConstantInt>(I.getOperand(1)); 
-              if(C != nullptr){
+              if(dyn_cast<ConstantInt>(I.getOperand(1))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(0));
@@ -259,8 +246,7 @@ public:
               break;
               }
               // 0 & X
-              C = dyn_cast<ConstantInt>(I.getOperand(0)); 
-              if(C != nullptr){
+              if(dyn_cast<ConstantInt>(I.getOperand(0))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(0));
@@ -270,8 +256,7 @@ public:
               }
             
               // X & 0
-              C = dyn_cast<ConstantInt>(I.getOperand(1)); 
-              if(C != nullptr){
+              if(dyn_cast<ConstantInt>(I.getOperand(1))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(1));
