@@ -445,6 +445,82 @@ define i32 @f(i32 %x, i32 %y) {
 }
 ```
 
+### Backend rework
+
+#### Description
+
+The provided simplebackend works in a way that it allocates everything on the stack first and then uses registers as "cache" for other operations. This is not very efficient and affects the performance massively. A redesigned backend that puts local variables directly on registers will work better. 
+
+#### Algorithmic Implementation
+
+The implementation of the reworked backend is still unclear now. The basic idea is :
+
+   for each instruction, check whether there is register left unused, if so, use the register; if not, go through the registers and dump those not used in the following code.
+
+   if no register can be emptied, select a victim, whose next use is farthest, and push it on stack. The new data take its place.
+
+Other parts of the code is not decided at the time of writing.
+
+#### Example IR
+
+No example IR is provided since it's a backend rework.
+
+### Using registers as cache
+
+#### Description
+
+In `spec.pdf` we can see that a store operation takes the same cost, regardless of length of the operated data. Thus, if the memory access pattern is by continuous single bytes (or other length shorter than 8 bytes), we can use the register as a cache to pack those operations and record them to the memory at once, to save some cost. Whether this optimization is going to be very helpful is currently unclear.
+
+#### Algorithmic Implementation
+
+The pseudo code cannot be provided since the design of this optimization is still unclear. 
+
+#### Example IR
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    ...
+    %ptr = call i8* @malloc(i32 4)
+    %ptr_i64 = bitcast i8* %ptr to i64
+    %ptr_0_i64 = add i64 %ptr_i64, 0
+    %ptr_0 = bitcast i64 %ptr_0_i64 to i8*
+    store i8 3, i8* %ptr_0
+    %ptr_1_i64 = add i64 %ptr_i64, 1
+    %ptr_1 = bitcast i64 %ptr_1_i64 to i8*
+    store i8 3, i8* %ptr_1
+    %ptr_2_i64 = add i64 %ptr_i64, 2
+    %ptr_2 = bitcast i64 %ptr_2_i64 to i8*
+    store i8 3, i8* %ptr_2
+    %ptr_3_i64 = add i64 %ptr_i64, 3
+    %ptr_3 = bitcast i64 %ptr_3_i64 to i8*
+    store i8 3, i8* %ptr_3
+    ...
+}
+```
+
+After
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %ptr = call i8* @malloc(i32 4)
+    %ptr_cache_0 = lshr i64 3, 8
+    %ptr_cache_1 = and i64 %ptr_cache_0, 3
+    %ptr_cache_3 = lshr i64 %ptr_cahce_2, 8
+    %ptr_cache_4 = and i64 %ptr_cache_3, 3
+    %ptr_cache_5 = lshr i64 %ptr_cache_4, 8
+    %ptr_cache_6 = and i64 %ptr_cache_5, 3
+    %ptr_i32_p = bitcast i8* %ptr to i32*
+    %ptr_cache_i32 = bitcast i64 %ptr_cache_6 to i32
+    store i32 %ptr_cache_i32, i32* %ptr_i32_p
+    ...
+    ret 0
+}
+```
+
+More example IR cannot be provided since the target scope of this optimization is very small
+
 ### Existing LLVM optimization integration
 
 This part would be mainly utilizing existing passes and libraries. The difficulty, procedure and output of the integration cannot be evaluated for now. What's more, there are multiple optimization options to integrate. Hence, no pseudocode or sample IRs will be provided.
