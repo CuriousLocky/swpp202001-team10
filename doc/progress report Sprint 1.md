@@ -24,7 +24,7 @@ one operand is one.
 
 ### Test result
 
-Following test IR program demonstrate all the changes that this optimization is capabale to make. The provided tests by TA didn't have any of the following cases so the tests remained same after running my optimization.
+Following test IR program demonstrate all the changes that this optimization is capabale to make. The provided tests by TA didn't have that many of the following cases but you can still find improvments in cycle and heap after running my optimization. ( submitted the result in a seperate file)
 
 
 **Cost before optimization:** 109.6224
