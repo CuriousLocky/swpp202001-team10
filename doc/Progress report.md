@@ -13,7 +13,7 @@ one operand is one.
 
 **Cost before optimization:** 109.6224
 
-**Cost before optimization:** 29.0336
+**Cost after optimization:** 29.0336
 
 **Saved cost:** %73.51
 
