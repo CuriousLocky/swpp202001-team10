@@ -1,4 +1,4 @@
-#include "SimpleBackend.h"
+#include "MallocToAllocaOpt.h"
 
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -18,7 +18,7 @@ using namespace llvm;
 using namespace std;
 using namespace llvm::PatternMatch;
 
-PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
+PreservedAnalyses MallocToAllocaOpt::run(Function &F, FunctionAnalysisManager &FAM) {
   vector <Instruction *> inst_to_change;
   vector <Instruction *> inst_to_remove;
   // Going through all instructions to find all malloc's that have been freed before function end  
@@ -34,7 +34,9 @@ PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
                 if(CallInst *CI = dyn_cast<CallInst>(UsrI)) 
                   if (CI->getCalledFunction()->getName() == "free") {           // current inst is free -> malloc is freed
                     inst_to_change.push_back(&I);
-                    inst_to_remove.push_back(&UsrI);
+                    inst_to_remove.push_back(UsrI);
+                    inst_to_remove.push_back(&I);
+                    break;
                   }  
             }
     // Changing malloc to alloca
@@ -42,20 +44,16 @@ PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
         
         Function *m = cast <Function> (I -> getOperand(1));
         Type *t;
-        for (auto &Arg : m -> args()) {
+        for (auto &Arg : m -> arg_operands()) {
           t = Arg.getType();                                        // to know type of malloc variable
         }
-        outs() << I -> getName() << '\n';
-      /*
-        unsigned int *add = (unsigned int *) malloc(sizeof(unsigned int));
-        AllocaInst* alloc = new AllocaInst(t, *add, I->getName(), &BB);
-      */
+      
         BasicBlock *parent = I -> getParent();
         IRBuilder<> ParentBuilder(parent);
         auto *alloc = ParentBuilder.CreateAlloca(t, nullptr, I->getName());  
         I -> replaceAllUsesWith(alloc);
       }
-    // Remove free instructions
+      
       for (auto *I: inst_to_remove) {
         I -> eraseFromParent();
       }
