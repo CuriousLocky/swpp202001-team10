@@ -333,6 +333,16 @@ Existing optimization to be integrated in Sprint 1:
 
 ## Sprint 2 Optimization
 
+### Existing LLVM optimization
+#### Description
+
+We are going to implement the follwoing existing optimizations:
+
+* Branch-related optimizations including br -> switch
+* Loop Interchange
+* Loop Invariant Code Motion
+
+=======
 ### Re-ordering memory access
 
 #### Description
