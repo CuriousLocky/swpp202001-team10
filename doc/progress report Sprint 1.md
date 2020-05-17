@@ -176,19 +176,25 @@ BB_end:
 I wasn't able to implement the case were the two operands are of non-constant non-equal integers. There was no class supporting the cast. 
 
 ## Malloc to alloca
+
 by Alfiya Mussabekova
 
 ### Development state
+
 To replace malloc instruction to alloca:
 1. go through all instructions and check whether it is malloc call or no
 2. if yes, see all uses of this call and check whether it is freed ot no
 3. remember both malloc and free calls
 4. go through malloc calls, find size of original malloc, create appropriate alloca instruction, replace malloc by it
 5. remove free and malloc calls from parent block
+
 ### Future plan
+
 1. Add size check to prevent allocating huge memore on stack
 2. Learn how to create alloca of an array of pointers
+
 ### Comments
+
 The problem was appeared in replace instruction stage. “Assertion New->getType() == getType() && replaceAllUses of value with new value with different type” fail was not solved.
 
 ## Insert reset instruction
@@ -240,4 +246,81 @@ convenient to use. I'm starting to have an evil thought to use it more in the
 reworked backend.
 
 ## Import existing passes
+
 by Minghang Li
+
+### Development state
+
+Three existing LLVM passes were successfully integrated into `main.cpp`, which 
+include optimizations for dead argument replacement, function inlining and 
+constant folding. Dead argument repalcement eliminates unused arguments in 
+`internal` functions; function inlining eliminates unnecessary function call to 
+reduce the cost of `call` and `ret`; constant folding reduces extra computation
+since the result of computation on constants are resolved at compile time.
+
+### IR program for testing
+
+#### Dead Argument Elimination
+
+This FileCheck is to confirm that the unused argument `i32 %x` in `internal`
+fucntion `f` is eliminated.
+
+```llvm
+define internal i32 @f(i32 %x, i32 %y) {
+; CHECK: start f 1
+    ret i32 %y
+}
+; CHECK: end f
+define internal i32 @f2(i32 %y) {
+; CHECK: start f2 1
+; CHECK: .entry:
+    %x = call i32 @f(i32 0, i32 1)
+    %ret = add i32 %x, %y
+    ret i32 %ret
+}
+; CHECK: end f2
+```
+#### Function Inlining
+
+This FileCheck is to confirm that the call of `g` is eliminated.
+
+```llvm
+define i32 @g() {
+; CHECK: start g 0
+; CHECK: .entry
+; CHECK-NEXT: ret 0
+    ret i32 0
+}
+define i32 @f() {
+; CHECK: start f 0
+; CHECK: .entry
+; CHECK: ret 0
+    %x = call i32 @g()
+    ret i32 %x
+}
+```
+
+#### Constant Folding
+
+This FileCheck is to confirm that the computation on constants is eliminated.
+
+```llvm
+define i32 @f() {
+; CHECK: start f 0
+; CHECK: .entry
+; CHECK: ret 8
+; CHECK: end f
+    %y = add i32 1, 1
+    %z = add i32 %y, 2
+    %w = mul i32 %z, 2
+    ret i32 %w
+}
+```
+
+### Test result
+
+The implementation passed all FileChecks and tests provided by the TA.
+
+### Future plan
+
+It's integrated very well. No future plan on integration is scheduled.
