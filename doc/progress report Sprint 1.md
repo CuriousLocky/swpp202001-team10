@@ -17,8 +17,17 @@ The detailed progress of each optimization are as follow.
 ## Malloc to alloca
 
 ### Development state
+To replace malloc instruction to alloca:
+1. go through all instructions and check whether it is malloc call or no
+2. if yes, see all uses of this call and check whether it is freed ot no
+3. remember both malloc and free calls
+4. go through malloc calls, find size of original malloc, create appropriate alloca instruction, replace malloc by it
+5. remove free and malloc calls from parent block
 ### Future plan
-### Coments
+1. Add size check to prevent allocating huge memore on stack
+2. Learn how to create alloca of an array of pointers
+### Comments
+The problem was appeared in replace instruction stage. “Assertion New->getType() == getType() && replaceAllUses of value with new value with different type” fail was not solved.
 
 ## Insert reset instruction
 
