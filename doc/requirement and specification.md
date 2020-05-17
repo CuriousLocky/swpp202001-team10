@@ -333,7 +333,117 @@ Existing optimization to be integrated in Sprint 1:
 
 ## Sprint 2 Optimization
 
-To be updated.
+### Re-ordering memory access
+
+#### Description
+
+The target machine is not capable to perform random access, so if the code requires to frequently jump between stack and heap, it will cost a lot. The goal of this optimization is to re-order the instuctions with memory access to minimize the cost of moving the memroy access head.
+
+#### Algorithmic Implementation
+
+The algorithm to implement this opt is still unclear at the time of writing. 
+
+#### Example IR
+
+**Case 1**:No dependency between accesses and re-ordering benifits
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %malloc_var_1 = call i8* @malloc(i32 8)
+    store i32 3, i32* %malloc_var_1
+    %alloca_var = alloca i32, i32 4
+    %malloc_var_2 = call i8* @malloc(i32 8)
+    store i32 4, i32* %malloc_var_2
+    ...
+    ret 0
+}
+```
+
+After
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %alloca_var = alloca i32, i32 4
+    %malloc_var_1 = call i8* @malloc(i32 8)
+    store i8 3, i8* %malloc_var_1
+    %malloc_var_2 = call i8* @malloc(i32 8)
+    store i8 4, i8* %malloc_var_2
+    ...
+    ret 0
+}
+```
+
+**Case 2**:There is dependency between the instructions(opt not applied)
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %alloca_ptr_1 = alloca i32, i32 8
+    ...
+    %alloca_content_1 = load i32, i32* %alloca_ptr
+    %malloc_var = call i8* @malloc(%alloca_content)
+    store i8 4, i8* %malloc_var
+    %alloca_ptr_1 = alloca i8*, %malloc_var
+    ...
+}
+```
+
+After
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %alloca_ptr_1 = alloca i32, i32 8
+    ...
+    %alloca_content_1 = load i32, i32* %alloca_ptr
+    %malloc_var = call i8* @malloc(%alloca_content)
+    store i8 4, i8* %malloc_var
+    %alloca_ptr_1 = alloca i8*, %malloc_var
+    ...
+}
+```
+
+**Case 3**:Re-ordering does not help(not applied)
+
+Before
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %alloca_var = alloca i32, i32 4
+    %malloc_var_1 = call i8* @malloc(i32 8)
+    store i8 3, i8* %malloc_var_1
+    %malloc_var_2 = call i8* @malloc(i32 8)
+    store i8 4, i8* %malloc_var_2
+    ...
+    ret 0
+}
+```
+
+After
+
+```llvm
+define i32 @f(i32 %x, i32 %y) {
+    %alloca_var = alloca i32, i32 4
+    %malloc_var_1 = call i8* @malloc(i32 8)
+    store i8 3, i8* %malloc_var_1
+    %malloc_var_2 = call i8* @malloc(i32 8)
+    store i8 4, i8* %malloc_var_2
+    ...
+    ret 0
+}
+```
+
+### Existing LLVM optimization integration
+
+This part would be mainly utilizing existing passes and libraries. The difficulty, procedure and output of the integration cannot be evaluated for now. What's more, there are multiple optimization options to integrate. Hence, no pseudocode or sample IRs will be provided.
+
+Existing optimization to be integrated in Sprint 2:
+
+* Redundant code elimination
+* Lowering alloca to register
+* Global var to local
 
 ## Sprint 3 Optimization
 
