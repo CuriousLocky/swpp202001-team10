@@ -35,5 +35,11 @@ obj/test_main.o: src/test_main.cpp $(DEPS)
 obj/gtest_all.o: $(GTESTSRC)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+obj/ArithmeticOptimization.o: src/ArithmeticOptimization.cpp $(GTESTSRC)
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+obj/allocType.o: src/allocType.cpp $(GTESTSRC)
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 clean:
 	rm -f sf-compiler sf-compiler-tests obj/*.o

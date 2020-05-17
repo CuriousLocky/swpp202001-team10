@@ -25,7 +25,7 @@ TEST(TestDemo, CheckMain) {
 
   string str;
   raw_string_ostream os(str);
-  AssemblyEmitter(&os).run(M.get());
+  AssemblyEmitter(&os, "resetHeap", "resetStack").run(M.get());
 
   str = os.str();
   // These strings should exist in the assembly!
