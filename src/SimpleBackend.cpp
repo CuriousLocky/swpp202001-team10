@@ -661,7 +661,11 @@ public:
   }
 };
 
-static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Function* rstS){
+static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Function* rstS, map<BasicBlock*, bool> &BBMap){
+  if(BBMap.count(&B)){
+    return;
+  }
+  BBMap[&B] = true;
   for(Instruction &I : B.getInstList()){
     AllocType nowVisit = UNKNOWN;
     AllocType lastOperandVisit = UNKNOWN;
@@ -684,7 +688,7 @@ static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Func
     lastVisit = nowVisit;       
   }
   for(int i = 0; i < B.getTerminator()->getNumSuccessors(); i++){
-    insertReset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS);
+    insertReset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS, BBMap);
   }
 }
 
@@ -716,7 +720,8 @@ PreservedAnalyses SimpleBackend::run(Module &M, ModuleAnalysisManager &FAM) {
       continue;
     }
     BasicBlock &BBEntry = F.getEntryBlock();
-    insertReset(BBEntry, UNKNOWN, Deprom.getResetHeap(), Deprom.getResetStack());
+    map<BasicBlock*, bool> BBMap;
+    insertReset(BBEntry, UNKNOWN, Deprom.getResetHeap(), Deprom.getResetStack(), BBMap);
   }
   // For debugging, this will print the depromoted module.
   if (printDepromotedModule)
