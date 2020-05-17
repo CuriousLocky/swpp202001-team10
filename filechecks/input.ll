@@ -1,5 +1,5 @@
-define i32 @f(i32 %x, i32 %y) {
-; CHECK-LABEL: @f(i32 %x, i32 %y)
+define i32 @main(i32 %x, i32 %y) {
+; CHECK-LABEL: @main(i32 %x, i32 %y)
 ; CHECK-NEXT: [[INST1:%.*]] = mul i32 [[X:%.*]], 32
 ; CHECK-NEXT: [[INST2:%.*]] = udiv i32 [[X]], 32
 ; CHECK-NEXT: [[INST3:%.*]] = mul i32 [[X]], 2

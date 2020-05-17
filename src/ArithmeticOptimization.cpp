@@ -1,17 +1,15 @@
+#include "ArithmeticOptimization.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+
 using namespace llvm;
 using namespace std;
 
-namespace {
-class ArithmeticOptimization : public PassInfoMixin<ArithmeticOptimization> {
-
-public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
+  PreservedAnalyses ArithmeticOptimization::run(Function &F, FunctionAnalysisManager &FAM) {
 	vector<Instruction *> removableInst;
 
 		for (auto &BB : F) {
@@ -27,7 +25,7 @@ public:
             // assuming 0 << 0 won't occure since it's been already removed by
             // constant folding opt
             // X << 0
-            if(dyn_cast<ConstantInt>(I.getOperand(1))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -38,14 +36,14 @@ public:
               else{
                 auto c1 = ConstantInt::get(I.getOperand(1)->getType(), pow(2.0, a), false);
                 Inst = BinaryOperator::Create(BinaryOperator::Mul, I.getOperand(0), c1,
-                    "inst1", &I);
+                    I.getName(), &I);
                 I.replaceAllUsesWith(Inst);
                 removableInst.push_back(&I);
                 break;
               }
             }
             // 0 << X
-            if(dyn_cast<ConstantInt>(I.getOperand(0))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -58,7 +56,7 @@ public:
             // assuming 0 >> 0 won't occure since it's been already removed by
             // constant folding opt
             // X >> 0
-            if(dyn_cast<ConstantInt>(I.getOperand(1))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -69,14 +67,14 @@ public:
               else{
                 auto c1 = ConstantInt::get(I.getOperand(1)->getType(), pow(2.0, a), false);
                 Inst = BinaryOperator::Create(BinaryOperator::UDiv, I.getOperand(0), c1,
-                    "inst2", &I);
+                    I.getName(), &I);
                 I.replaceAllUsesWith(Inst);
                 removableInst.push_back(&I);
                 break;
               }
             }
             // 0 >> X
-            if(dyn_cast<ConstantInt>(I.getOperand(0))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -92,13 +90,13 @@ public:
             if(I.getOperand(0) == I.getOperand(1)){
               C = ConstantInt::get( I.getOperand(0)->getContext(), APInt(32, StringRef("2"), 10));
               Inst = BinaryOperator::Create(BinaryOperator::Mul, I.getOperand(0), C,
-                    "inst3", &I);
+                    I.getName(), &I);
               I.replaceAllUsesWith(Inst);
               removableInst.push_back(&I);
               break;
             }
             // 0 + X
-            if(dyn_cast<ConstantInt>(I.getOperand(0))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(1));
@@ -107,7 +105,7 @@ public:
               }
             }
             // X + 0
-            if(dyn_cast<ConstantInt>(I.getOperand(1))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -127,19 +125,19 @@ public:
               break;
             }
             // 0 - X
-            if(dyn_cast<ConstantInt>(I.getOperand(0))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
               a = C->getZExtValue();
               if(a == 0){
                 C  = ConstantInt::get( I.getOperand(1)->getContext(), APInt(32, StringRef("-1"), 10));
                 Inst = BinaryOperator::Create(BinaryOperator::Mul, I.getOperand(1), C,
-                    "inst4", &I);
+                    I.getName(), &I);
                 I.replaceAllUsesWith(Inst);
                 removableInst.push_back(&I);
                 break;
               }
             }
             // X - 0
-            if(dyn_cast<ConstantInt>(I.getOperand(1))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -160,7 +158,7 @@ public:
             }
 
             // 0 / X
-            if(dyn_cast<ConstantInt>(I.getOperand(0))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
               a = C->getZExtValue();
               if(a == 0){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -171,7 +169,7 @@ public:
             
 
             // X / 1
-            if(dyn_cast<ConstantInt>(I.getOperand(1))){
+            if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
               a = C->getZExtValue();
               if(a == 1){
                 I.replaceAllUsesWith(I.getOperand(0));
@@ -202,7 +200,7 @@ public:
               }
               
               // X % 1
-              if(dyn_cast<ConstantInt>(I.getOperand(1))){
+              if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
                 a = C->getZExtValue();
                 if(a == 1){
                   C  = ConstantInt::get( I.getOperand(0)->getContext(), APInt(32, StringRef("0"), 10));
@@ -219,7 +217,7 @@ public:
               break;
             }
               // 0 | X
-              if(dyn_cast<ConstantInt>(I.getOperand(0))){
+              if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(1));
@@ -229,7 +227,7 @@ public:
               }
             
               // X | 0
-              if(dyn_cast<ConstantInt>(I.getOperand(1))){
+              if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(0));
@@ -246,7 +244,7 @@ public:
               break;
               }
               // 0 & X
-              if(dyn_cast<ConstantInt>(I.getOperand(0))){
+              if((C = dyn_cast<ConstantInt>(I.getOperand(0)))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(0));
@@ -256,7 +254,7 @@ public:
               }
             
               // X & 0
-              if(dyn_cast<ConstantInt>(I.getOperand(1))){
+              if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(1));
@@ -281,8 +279,4 @@ public:
       I->eraseFromParent();
     return PreservedAnalyses::all();
   }
-};
-}
-
-
 

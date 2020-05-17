@@ -7,7 +7,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
-
+#include "ArithmeticOptimization.h"
 #include <string>
 
 using namespace std;
@@ -56,7 +56,6 @@ public:
   }
 };
 
-
 int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal(argv[0]);
   PrettyStackTraceProgram X(argc, argv);
@@ -85,7 +84,7 @@ int main(int argc, char **argv) {
 
   FunctionPassManager FPM;
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
-  FPM.addPass(DoNothingPass());
+  FPM.addPass(ArithmeticOptimization());
 
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
