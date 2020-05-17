@@ -196,7 +196,7 @@ BB_end:
 
 ### Comments
 
-I wasn't able to implement the case were the two operands are of non-constant integers. There was no class supporting the cast. 
+I wasn't able to implement the case were the two operands are of non-constant non-equal integers. There was no class supporting the cast. 
 
 
 ## Malloc to alloca
