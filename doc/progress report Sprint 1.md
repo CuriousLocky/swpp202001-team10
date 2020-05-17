@@ -36,6 +36,15 @@ bridges. This means all of real registers used are from alloca, which is Stack.
 Because of this reason, all of the instructions accessing memory are on Stack. So 
 this optimization will never be triggered. 
 
+### IR program for testing
+
+No IR program is provided since this optimization is rather low-level and tightly
+bind to the backend. Due to the reason mentioned above, the generated assembly 
+is also not changed with this optimization applied. In this case, there is no point
+to have IR program specially for this optimization.
+
+The test from TA are still tested to show no effects are made.
+
 ### Test result
 
 All of the test results are in reset_opt_test.log. Some minor differences can be
