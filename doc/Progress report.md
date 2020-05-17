@@ -1,4 +1,5 @@
-###Arithmetic Optimization: (Abtahi)
+
+### Arithmetic Optimization:
 
 Considering the following cases, we were able to change the instruction to a less expensive one or remove the whole instruction and replace its uses with one of the operands. The example IR program includes all the cases.
 
@@ -10,7 +11,11 @@ one operands is zero.
        
 one operand is one.
 
-**Saved cost:** %25 to %100. 
+**Cost before optimization:** 109.6224
+
+**Cost before optimization:** 29.0336
+
+**Saved cost:** %73.51
 
 
 Before
