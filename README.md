@@ -1,3 +1,4 @@
+
 # 2020-1 SWPP Team 10 Course Project
 
 This is Team 10's code repo of the course project for [Principles and Practices of Software Development](https://github.com/snu-sf-class/swpp202001) @ [Seoul National University](https://en.snu.ac.kr/). This project is an improved version of the naive compiler provided in [snu-sf-class/swpp202001-compiler](https://github.com/snu-sf-class/swpp202001-compiler), which converts LLVM IR to SWPP assembly.
@@ -37,6 +38,31 @@ To see the IR that has registers depromoted before emitting assembly, please run
 ./sf-compiler input.ll -o a.s -print-depromoted-module
 ```
 
+## How to run on tests provided by the TA
+
+If you want to check on all the tests provided by the TA, do:
+
+```bash
+./run-test.sh all <Interpreter Path>
+```
+
+For example,
+```bash
+./run-test.sh all ~/swpp202001-interpreter/sf-interpreter
+```
+
+If you only want to check on certain test provded by the TA, do:
+
+```bash
+./run-test.sh <Test Path> <Interpreter Path>
+```
+
+For example,
+
+```bash
+./run-test.sh ./test/binary_tree/ ~/swpp202001-interpreter/sf-interpreter
+```
+
 ## Commit Message Conventions
 
 There are two popular ways of writing a commit message: [Tim Pope style](https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html) (This is also recommended in the official guideline of Git, [Pro Git](https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project)), and the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) style. The latter one is preferred in many large open-source projects since it dovetails [SemVer](https://semver.org/). Here we adopt the Tim Pope style, for it's succinctness.
@@ -64,5 +90,3 @@ See [project/optList.md](project/spec.pdf) for possible optimization opitions.
 - [x] Discuss project ideas -- All
 - [x] Make presentation slides (due **April 28th**) -- All
 - [x] Wrtie documentation (due **May 2nd**) -- Matchy
-- [ ] Learn Travis-CI -- Matchy
-- [ ] Learn how to add badges to README.md -- Matchy

@@ -19,8 +19,14 @@ public:
 
 class AssemblyEmitter {
   llvm::raw_ostream *fout;
+  std::string resetHeapName;
+  std::string resetStackName;
 public:
-  AssemblyEmitter(llvm::raw_ostream *fout) : fout(fout) {}
+  AssemblyEmitter(llvm::raw_ostream *fout, std::string resetHeapName, std::string resetStackName):
+    fout(fout),
+    resetHeapName(resetHeapName),
+    resetStackName(resetStackName)
+    {}
   void run(llvm::Module *M);
 };
 
