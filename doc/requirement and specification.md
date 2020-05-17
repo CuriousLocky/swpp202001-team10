@@ -531,6 +531,8 @@ Existing optimization to be integrated in Sprint 2:
 * Lowering alloca to register
 * Global var to local
 
+### Unfinished from Sprint 1: `malloc` to `alloca`
+
 ## Sprint 3 Optimization
 
 To be updated.
