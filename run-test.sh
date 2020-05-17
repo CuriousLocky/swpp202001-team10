@@ -19,7 +19,7 @@ fi
 echo "--- Start Test.. ---"
 set -e
 
-res="../test-score.log"
+res="./test-score.log"
 
 touch -c $res
 

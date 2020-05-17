@@ -38,7 +38,9 @@ To see the IR that has registers depromoted before emitting assembly, please run
 ./sf-compiler input.ll -o a.s -print-depromoted-module
 ```
 
-## How to run on tests provided by the TA
+## Run Tests Provided by TA
+
+`run-test.sh` will help you check the correctness of your implementation by running it on the tests provided by our TA. It can also generate a cost report, which is `test-score.log`.
 
 If you want to check on all the tests provided by the TA, do:
 
@@ -63,6 +65,8 @@ For example,
 ./run-test.sh ./test/binary_tree/ ~/swpp202001-interpreter/sf-interpreter
 ```
 
+The automater can catch undesired outputs, terminate the test and print it to `stdout`. If terminates normally, it suggests that the compiler runs okay.
+
 ## Commit Message Conventions
 
 There are two popular ways of writing a commit message: [Tim Pope style](https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html) (This is also recommended in the official guideline of Git, [Pro Git](https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project)), and the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) style. The latter one is preferred in many large open-source projects since it dovetails [SemVer](https://semver.org/). Here we adopt the Tim Pope style, for it's succinctness.
@@ -81,12 +85,4 @@ Read [this nice blog post](https://chris.beams.io/posts/git-commit/) for explana
 
 ## Possible Compiler Improvement Ideas
 
-See [project/optList.md](project/spec.pdf) for possible optimization opitions.
-
-
-## TO-DOs
-
-- [x] Add to-dos to track project progress status -- Matchy
-- [x] Discuss project ideas -- All
-- [x] Make presentation slides (due **April 28th**) -- All
-- [x] Wrtie documentation (due **May 2nd**) -- Matchy
+See [project/optList.md](project/optList.md) for possible optimization opitions.
