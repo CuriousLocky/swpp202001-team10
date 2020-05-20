@@ -15,6 +15,8 @@
 #include "llvm/Transforms/IPO/Inliner.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "ArithmeticOptimization.h"
+#include "llvm/Transforms/Scalar/DCE.h"
+
 /*****************************************************************************/
 #include <string>
 
@@ -83,6 +85,7 @@ int main(int argc, char **argv) {
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FPM.addPass(ArithmeticOptimization());
   FPM.addPass(GVN());
+  FPM.addPass(DCEPass());
 
   // CGSCC-level pass
   CGSCCPassManager CGPM;
