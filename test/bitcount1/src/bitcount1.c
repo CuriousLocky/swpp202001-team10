@@ -3,13 +3,12 @@
 
 int64_t read();
 void write(int64_t);
-int const g =1;
+
 unsigned int countSetBits(unsigned int n) {
   unsigned int count = 0;
   while (n) {
     count += n & 1;
     n >>= 1;
-    int a = g;
   }
   return count;
 }
