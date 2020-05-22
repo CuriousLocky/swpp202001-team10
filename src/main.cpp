@@ -16,7 +16,7 @@
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "ArithmeticOptimization.h"
 #include "llvm/Transforms/Scalar/DCE.h"
-
+#include "llvm/Transforms/IPO/GlobalOpt.h"
 /*****************************************************************************/
 #include <string>
 
@@ -86,7 +86,6 @@ int main(int argc, char **argv) {
   FPM.addPass(ArithmeticOptimization());
   FPM.addPass(GVN());
   FPM.addPass(DCEPass());
-
   // CGSCC-level pass
   CGSCCPassManager CGPM;
   CGPM.addPass(InlinerPass());
@@ -96,8 +95,9 @@ int main(int argc, char **argv) {
   MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
   MPM.addPass(DeadArgumentEliminationPass());
+  MPM.addPass(GlobalOptPass());
   MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
-
+  
   MPM.run(*M, MAM);
 
   return 0;
