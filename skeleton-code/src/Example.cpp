@@ -13,7 +13,7 @@ using namespace std;
 
 //static void something(){} //static functions if needed
 
-PreservedAnalyses Example::run(Module &M, ModuleAnalysisManager &FAM) {
+PreservedAnalyses Example::run(Module &M, FunctionAnalysisManager &FAM) {
     // what you want to do
     return PreservedAnalyses::all();
 }
