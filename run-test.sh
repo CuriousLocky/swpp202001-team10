@@ -24,24 +24,20 @@ res="./test-score.log"
 touch -c $res
 
 if [[ "$1" == "all" ]]; then
+  echo "TEST RESULT:" > $res
   for dir in `find $TEST -maxdepth 1 -type d | cut -c 8-`  ; do
     echo "== Run Test on ${TEST}${dir} =="
     echo "#### $dir ####" >> $res
     echo " " >> $res
     ll=`find ${TEST}${dir} -name "*.ll"`
-    s=`find ${TEST}${dir} -name "*.s"`
     ./sf-compiler $ll -o tmp.s
     END=`find ${TEST}${dir}/test/ -name "input*.txt" | wc -l`
       for i in $(seq 1 $END) ; do
         input="./${TEST}${dir}/test/input${i}.txt"
         output="./${TEST}${dir}/test/output${i}.txt"
-        echo "-- input${i} --"
-        echo "== input${i} ==" >> $res
-        echo "-- before --" >> $res
-        cat $input | $INTERPRETER $s > /dev/null
-        cat sf-interpreter.log >> $res
+        echo "-- input${i} --"         # To STDOUT
+        echo "== input${i} ==" >> $res # To output file
         cat $input | $INTERPRETER tmp.s | diff $output -
-        echo "-- after --" >> $res
         cat sf-interpreter.log >> $res
         echo " " >> $res
       done
@@ -52,7 +48,6 @@ else
   echo "#### $dir ####" >> $res
   echo " " >> $res
   ll=`find $dir -name "*.ll"`
-  s=`find $dir -name "*.s"`
   ./sf-compiler $ll -o tmp.s
   END=`find ${dir}test/ -name "input*.txt" | wc -l`
   for i in $(seq 1 $END) ; do
@@ -60,11 +55,7 @@ else
     output="./${dir}test/output${i}.txt"
     echo "-- input${i} --"
     echo "== input${i} ==" >> $res
-    echo "-- before --" >> $res
-    cat $input | $INTERPRETER $s &> /dev/null
-    cat sf-interpreter.log >> $res
     cat $input | $INTERPRETER tmp.s | diff $output -
-    echo "-- after --" >> $res
     cat sf-interpreter.log >> $res
     echo " " >> $res
   done
