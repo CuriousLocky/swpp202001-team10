@@ -16,31 +16,38 @@ data = {}
 
 c = contents[0]
 for line in c:
-    if line.beginswith('#'):
-        test = re.search("^[\#]{4}\s(.*)\s[\#]{4}$").group(0)
+    if line.startswith('#'):
+        test = re.search("^[\#]{4}\s(.*)\s[\#]{4}$", line).group(1)
+        print(test)
         data[test] = {}
-    if line.beginswith('Cost: '):
-        cost = float(c[6:])
+    if line.startswith('Cost: '):
+        cost = float(line[6:])
         data[test]['cost'] = cost
-    if line.beginswith('Max heap usage (bytes): '):
-        heap = float(c[len('Max heap usage (bytes): '):])
+    if line.startswith('Max heap usage (bytes): '):
+        heap = float(line[len('Max heap usage (bytes): '):])
         data[test]['heapUsage'] = heap
 
 c = contents[1]
 for line in c:
-    if line.beginswith('#'):
-        test = re.search("^[\#]{4}\s(.*)\s[\#]{4}$").group(0)
-    if line.beginswith('Cost: '):
-        cost = float(c[6:])
+    if line.startswith('#'):
+        test = re.search("^[\#]{4}\s(.*)\s[\#]{4}$", line).group(1)
+    if line.startswith('Cost: '):
+        cost = float(line[6:])
         old_cost = data[test]['cost']
-        data[test]['cost'] = (old_cost - cost)/old_cost
-    if line.beginswith('Max heap usage (bytes): '):
-        heap = float(c[len('Max heap usage (bytes): '):])
+        try:
+            data[test]['cost'] = (old_cost - cost)/old_cost
+        except:
+            data[test]['cost'] = "N/A"
+    if line.startswith('Max heap usage (bytes): '):
+        heap = float(line[len('Max heap usage (bytes): '):])
         old_heap = data[test]['heapUsage'] 
-        data[test]['heapUsage'] = (old_heap - heap)/old_heap
+        try:
+            data[test]['heapUsage'] = (old_heap - heap)/old_heap
+        except:
+            data[test]['heapUsage'] = "N/A"
 
 with open('improve-report.log', 'w') as f:
-    for test in data:
-       f.write(f"=={test}==\n")
-       for k in test:
-           f.write(f'{k} improve %: {data[test][k]}\n')
+    for t in data:
+       f.write(f"=={t}==\n")
+       for k in data[t]:
+           f.write(f'{k} improve %: {data[t][k]}\n')
