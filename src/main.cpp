@@ -17,7 +17,7 @@
 #include "ArithmeticOptimization.h"
 #include "llvm/Transforms/Scalar/DCE.h"
 #include "llvm/Transforms/IPO/GlobalOpt.h"
-#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include "Alloca2reg.h"
 /*****************************************************************************/
 #include <string>
 
@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
   FPM.addPass(ArithmeticOptimization());
   FPM.addPass(GVN());
   FPM.addPass(DCEPass());
-  FPM.addPass(PromotePass());
+  FPM.addPass(Alloca2reg());
   // CGSCC-level pass
   CGSCCPassManager CGPM;
   CGPM.addPass(InlinerPass());
