@@ -405,4 +405,6 @@ This part would be mainly utilizing existing passes and libraries. The difficult
 
 Existing optimization to be integrated in Sprint 3:
 
+- Tail call elimination
 - `br` to `switch`
+- Loop Interchange

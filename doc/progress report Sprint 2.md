@@ -9,7 +9,7 @@ This is the Progress report for Sprint 2
       - [Sample optimization result](#sample-optimization-result)
     - [Future plan](#future-plan)
   - [`malloc` to `alloca`](#malloc-to-alloca)
-    - [Development status](#development-status-1)
+    - [Development state](#development-state)
     - [Future plan](#future-plan-1)
   - [Import Existing Passes](#import-existing-passes)
     - [Dead Code Elimination](#dead-code-elimination)
@@ -58,19 +58,13 @@ declare i32 @func(i32, i32, i32)
 ; To show the success of stack management, only 4 registers are allowed 
 define void @main(i32 %arg0, i32 %arg1) {
 entry:
-<<<<<<< HEAD
-=======
   ; While translating into assembly, only the name of the register will be
   ; preserved. For example, r1_temp1 will just be translated into r1
->>>>>>> 0725798... Update documents for Sprint 2
   %r1_temp1 = call i32 @func(i32 1, i32 2, i32 3)
   %r2_temp2 = call i32 @func(i32 %r1_temp1, i32 2, i32 3)
   %r3_temp3 = call i32 @func(i32 %r1_temp1, i32 %r2_temp2, i32 3)
   %r4_temp4 = call i32 @func(i32 %r1_temp1, i32 %r2_temp2, i32 %r3_temp3)
-<<<<<<< HEAD
-=======
   ; ----------------------------------------------------------------------------
->>>>>>> 0725798... Update documents for Sprint 2
   ; The following 3 lines will be squashed into 1 line in assembly, 
   ; which is a simple 'store 4 r1 sp 0' 
   %temp_p_r1_temp1 = call i8* @__spOffset(i64 0)
@@ -112,9 +106,20 @@ There are quite a few features that we have not yet figured out a concrete way t
 
 Implemented by Alfiya Mussabekova
 
-### Development status
+### Development state
+
+From last sprint there left unsolved assertion fail `Assertion New->getType() == getType() && replaceAllUses of value with new value with different type`, to fix it, we decided to allocate array of `i8`, because return type of malloc is `i8*`.
+
+However, while implementing we changed array of `i8` to many `i8` and added checking on how much bytes are allocated, for now we decided that it is safe to allocate 256 bytes.
+
+Optimization is completed and works in my teammate's computer, but we did not have enough time to test it. Most probably in my computer there is environment problem, because of which I get another assertion fail: `isValidArgumentType(Params[i]) && "Not a valid type for function argument!"`
 
 ### Future plan
+
+- Fix environment problem
+- Complete testing
+- Fix potential bugs
+
 
 ## Import Existing Passes
 
@@ -225,10 +230,6 @@ declare i8* @malloc(i64)
 
 ### Test result
 
-<<<<<<< HEAD
-All these three implementations passed TA's test files and our filechecks succussfully.
-The improvement statistics 
-=======
 All these three implementations passed TA's test files and our filechecks succussfully. Regarding the cost improvements, unfortunately we were not able to get TA's tests improved due to the added complexity and the passes order. After revising the order, we will see the real improvements. 
 
 ```
@@ -282,7 +283,6 @@ Average heapUsage improve %: 0.00000%
 Average cost improve %: 0.00000%  
 Average heapUsage improve %: 0.00000%
 ```
->>>>>>> 0725798... Update documents for Sprint 2
 
 ## Abandoned Work
 
