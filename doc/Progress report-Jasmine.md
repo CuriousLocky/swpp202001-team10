@@ -117,7 +117,59 @@ declare i8* @malloc(i64)
 
 ### Test result
 
-All these three implementations passed TA's test files and our filechecks succussfully.
+All these three implementations passed TA's test files and our filechecks succussfully. Regarding the cost improvements, unfortunately we were not able to get TA's tests improved due to the added complexity and the passes order. After revising the order, we will see the real improvements. 
+
+==bitcount3==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==gcd==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==binary_tree==
+
+Average cost improve %: -0.01932%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount4==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount2==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount1==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==collatz==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==prime==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bubble_sort==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount5==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+
 ### Future plan
 
 We may want to see if we can transform inner global valiables to local. 
