@@ -3,13 +3,35 @@ This is the requirement and specification document for Team 10 that describes th
 
 # Table of Contents
 
-* [Sprint 1 Optimization](#sprint-1-optimization)
-    * [Arithematic optimizations](#arithematic-optimizations)
-    * [Reset insertion](#reset-insertion)
-    * [`malloc` to `alloca`](#malloc-to-alloca)
-    * [Existing LLVM optimization](#existing-llvm-optimization)
-* [Sprint 2 Optimization](#sprint-2-optimization)
-* [Sprint 3 Optimization](#sprint-3-optimization)
+- [Table of Contents](#table-of-contents)
+  - [Sprint 1 Optimization](#sprint-1-optimization)
+    - [Arithematic optimizations](#arithematic-optimizations)
+      - [Description](#description)
+      - [Algorithmic Implementation](#algorithmic-implementation)
+      - [Example IR](#example-ir)
+    - [Reset insertion](#reset-insertion)
+      - [Description](#description-1)
+      - [Algorithmic Implementation](#algorithmic-implementation-1)
+      - [Example IR](#example-ir-1)
+    - [`malloc` to `alloca`](#malloc-to-alloca)
+      - [Description](#description-2)
+      - [Algorithmic Implementation](#algorithmic-implementation-2)
+      - [Example IR](#example-ir-2)
+    - [Existing LLVM optimization](#existing-llvm-optimization)
+      - [Description](#description-3)
+  - [Sprint 2 Optimization](#sprint-2-optimization)
+    - [Backend rework (Register Allocation)](#backend-rework-register-allocation)
+      - [Description](#description-4)
+      - [Algorithmic Implementation](#algorithmic-implementation-3)
+      - [Example IR](#example-ir-3)
+    - [Existing LLVM optimization integration](#existing-llvm-optimization-integration)
+    - [Unfinished from Sprint 1: `malloc` to `alloca`](#unfinished-from-sprint-1-malloc-to-alloca)
+  - [Sprint 3 Optimization](#sprint-3-optimization)
+    - [Unfinished from Sprint 2: Backend rework (Register allocation)](#unfinished-from-sprint-2-backend-rework-register-allocation)
+    - [Unfinished from Sprint 1: `malloc` to `alloca`](#unfinished-from-sprint-1-malloc-to-alloca-1)
+    - [Optimizing Pass order](#optimizing-pass-order)
+    - [Bug fix: `GVN` not working](#bug-fix-gvn-not-working)
+    - [Existing LLVM optimization](#existing-llvm-optimization-1)
 
 ## Sprint 1 Optimization
 
@@ -326,126 +348,14 @@ This part would be mainly utilizing existing passes and libraries. The difficult
 
 Existing optimization to be integrated in Sprint 1:
 
-* Function inlining
-* Dead argument elimination
-* Constant folding
+- Function inlining
+- Dead argument elimination
+- Constant folding
 
 
 ## Sprint 2 Optimization
 
-### Existing LLVM optimization
-#### Description
-
-We are going to implement the follwoing existing optimizations:
-
-* Branch-related optimizations including br -> switch
-* Loop Interchange
-* Loop Invariant Code Motion
-
-=======
-### Re-ordering memory access
-
-#### Description
-
-The target machine is not capable to perform random access, so if the code requires to frequently jump between stack and heap, it will cost a lot. The goal of this optimization is to re-order the instuctions with memory access to minimize the cost of moving the memroy access head.
-
-#### Algorithmic Implementation
-
-The algorithm to implement this opt is still unclear at the time of writing. 
-
-#### Example IR
-
-**Case 1**:No dependency between accesses and re-ordering benifits
-
-Before
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %malloc_var_1 = call i8* @malloc(i32 8)
-    store i32 3, i32* %malloc_var_1
-    %alloca_var = alloca i32, i32 4
-    %malloc_var_2 = call i8* @malloc(i32 8)
-    store i32 4, i32* %malloc_var_2
-    ...
-    ret 0
-}
-```
-
-After
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %alloca_var = alloca i32, i32 4
-    %malloc_var_1 = call i8* @malloc(i32 8)
-    store i8 3, i8* %malloc_var_1
-    %malloc_var_2 = call i8* @malloc(i32 8)
-    store i8 4, i8* %malloc_var_2
-    ...
-    ret 0
-}
-```
-
-**Case 2**:There is dependency between the instructions(opt not applied)
-
-Before
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %alloca_ptr_1 = alloca i32, i32 8
-    ...
-    %alloca_content_1 = load i32, i32* %alloca_ptr
-    %malloc_var = call i8* @malloc(%alloca_content)
-    store i8 4, i8* %malloc_var
-    %alloca_ptr_1 = alloca i8*, %malloc_var
-    ...
-}
-```
-
-After
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %alloca_ptr_1 = alloca i32, i32 8
-    ...
-    %alloca_content_1 = load i32, i32* %alloca_ptr
-    %malloc_var = call i8* @malloc(%alloca_content)
-    store i8 4, i8* %malloc_var
-    %alloca_ptr_1 = alloca i8*, %malloc_var
-    ...
-}
-```
-
-**Case 3**:Re-ordering does not help(not applied)
-
-Before
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %alloca_var = alloca i32, i32 4
-    %malloc_var_1 = call i8* @malloc(i32 8)
-    store i8 3, i8* %malloc_var_1
-    %malloc_var_2 = call i8* @malloc(i32 8)
-    store i8 4, i8* %malloc_var_2
-    ...
-    ret 0
-}
-```
-
-After
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %alloca_var = alloca i32, i32 4
-    %malloc_var_1 = call i8* @malloc(i32 8)
-    store i8 3, i8* %malloc_var_1
-    %malloc_var_2 = call i8* @malloc(i32 8)
-    store i8 4, i8* %malloc_var_2
-    ...
-    ret 0
-}
-```
-
-### Backend rework
+### Backend rework (Register Allocation)
 
 #### Description
 
@@ -465,74 +375,34 @@ Other parts of the code is not decided at the time of writing.
 
 No example IR is provided since it's a backend rework.
 
-### Using registers as cache
-
-#### Description
-
-In `spec.pdf` we can see that a store operation takes the same cost, regardless of length of the operated data. Thus, if the memory access pattern is by continuous single bytes (or other length shorter than 8 bytes), we can use the register as a cache to pack those operations and record them to the memory at once, to save some cost. Whether this optimization is going to be very helpful is currently unclear.
-
-#### Algorithmic Implementation
-
-The pseudo code cannot be provided since the design of this optimization is still unclear. 
-
-#### Example IR
-
-Before
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    ...
-    %ptr = call i8* @malloc(i32 4)
-    %ptr_i64 = bitcast i8* %ptr to i64
-    %ptr_0_i64 = add i64 %ptr_i64, 0
-    %ptr_0 = bitcast i64 %ptr_0_i64 to i8*
-    store i8 3, i8* %ptr_0
-    %ptr_1_i64 = add i64 %ptr_i64, 1
-    %ptr_1 = bitcast i64 %ptr_1_i64 to i8*
-    store i8 3, i8* %ptr_1
-    %ptr_2_i64 = add i64 %ptr_i64, 2
-    %ptr_2 = bitcast i64 %ptr_2_i64 to i8*
-    store i8 3, i8* %ptr_2
-    %ptr_3_i64 = add i64 %ptr_i64, 3
-    %ptr_3 = bitcast i64 %ptr_3_i64 to i8*
-    store i8 3, i8* %ptr_3
-    ...
-}
-```
-
-After
-
-```llvm
-define i32 @f(i32 %x, i32 %y) {
-    %ptr = call i8* @malloc(i32 4)
-    %ptr_cache_0 = lshr i64 3, 8
-    %ptr_cache_1 = and i64 %ptr_cache_0, 3
-    %ptr_cache_3 = lshr i64 %ptr_cahce_2, 8
-    %ptr_cache_4 = and i64 %ptr_cache_3, 3
-    %ptr_cache_5 = lshr i64 %ptr_cache_4, 8
-    %ptr_cache_6 = and i64 %ptr_cache_5, 3
-    %ptr_i32_p = bitcast i8* %ptr to i32*
-    %ptr_cache_i32 = bitcast i64 %ptr_cache_6 to i32
-    store i32 %ptr_cache_i32, i32* %ptr_i32_p
-    ...
-    ret 0
-}
-```
-
-More example IR cannot be provided since the target scope of this optimization is very small
-
 ### Existing LLVM optimization integration
 
 This part would be mainly utilizing existing passes and libraries. The difficulty, procedure and output of the integration cannot be evaluated for now. What's more, there are multiple optimization options to integrate. Hence, no pseudocode or sample IRs will be provided.
 
 Existing optimization to be integrated in Sprint 2:
 
-* Redundant code elimination
-* Lowering alloca to register
-* Global var to local
+- Redundant code elimination
+- Lowering alloca to register
+- Global var to local
 
 ### Unfinished from Sprint 1: `malloc` to `alloca`
 
 ## Sprint 3 Optimization
 
-To be updated.
+### Unfinished from Sprint 2: Backend rework (Register allocation)
+
+### Unfinished from Sprint 1: `malloc` to `alloca`
+
+### Optimizing Pass order
+
+Some Passes are doing "cleaning up" work and thus should be registered 
+
+### Bug fix: `GVN` not working
+
+### Existing LLVM optimization
+
+This part would be mainly utilizing existing passes and libraries. The difficulty, procedure and output of the integration cannot be evaluated for now. What's more, there are multiple optimization options to integrate. Hence, no pseudocode or sample IRs will be provided.
+
+Existing optimization to be integrated in Sprint 3:
+
+- `br` to `switch`
