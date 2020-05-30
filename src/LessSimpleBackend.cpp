@@ -65,7 +65,7 @@ public:
   }
 };
 
-class StackFrame{
+class LessSimpleBackend::StackFrame{
     vector<pair<Instruction*, int>> frame;
     Function *F;
     LessSimpleBackend *Backend;
@@ -189,10 +189,19 @@ public:
     }
 };
 
-class Registers{
+class LessSimpleBackend::Registers{
     vector<Instruction*> regs;
     Function *F;
     LessSimpleBackend *Backend;
+public:
+    Instruction* getInst(int regPos){
+        assert(regPos>0 && regPos<=REG_SIZE);
+        return regs[regPos-1];
+    }
+    void setInst(Instruction *I, int regPos){
+        assert(regPos>0 && regPos<=REG_SIZE);
+        regs[regPos-1] = I;
+    }
     bool usedAfter(Instruction *I, Instruction *I_checked){
         DominatorTree DT(*F);
         for(auto *User : I->users()){
@@ -286,7 +295,6 @@ class Registers{
         return "r"+to_string(regNum)+"_"+I->getName().str();
     }
 
-public:
     Registers(Function *F, LessSimpleBackend *Backend):
         F(F),Backend(Backend),regs(vector<Instruction*>(REG_SIZE)){
         for(int i = 0; i < regs.size(); i++){
@@ -313,71 +321,6 @@ public:
             }
         }
         return -1;
-    }
-    int putOnRegs(Instruction* I, StackFrame* frame){
-        vector<int> operandOnRegs;
-        vector<Instruction*> toMoveToRegs;
-        IRBuilder<> Builder(I);
-        for(int i = 0; i < I->getNumOperands(); i++){
-            Value* operand = I->getOperand(i);
-            if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
-                int regNum = findOnRegs(operand_I);
-                if(regNum > 0){
-                    operandOnRegs.push_back(regNum-1);
-                    continue;
-                }
-                int stackOffset = frame->findOnStack(operand_I);
-                if(stackOffset >= 0){
-                    toMoveToRegs.push_back(operand_I);
-                    continue;
-                }
-            }
-        }
-        vector<pair<Instruction*, int>> evicRegs;
-        for(Instruction* I_onStack : toMoveToRegs){
-            printRegs();
-            int victimRegNum=tryPutOnRegs(I_onStack, I);
-            outs()<<I_onStack->getName()<<":"<<victimRegNum<<"\n";
-            if(victimRegNum <= 0){
-                victimRegNum = findVictimExcept(operandOnRegs);
-                evicRegs.push_back(pair(regs[victimRegNum-1], victimRegNum));
-                storeToFrame(regs[victimRegNum-1], frame, I, victimRegNum);
-            }
-            Instruction* newInst = loadToReg(I_onStack, frame, I, victimRegNum);
-            I->replaceUsesOfWith(I_onStack, newInst);
-            operandOnRegs.push_back(victimRegNum-1);
-        }
-        Instruction *I_next = I->getNextNode();
-        if(I->hasName()){
-            int victimRegNum = tryPutOnRegs(I);
-            bool dumpFlag = false;
-            if(victimRegNum <= 0){
-                victimRegNum = findVictimExcept(operandOnRegs);
-                evicRegs.push_back(pair(regs[victimRegNum-1], victimRegNum));
-                storeToFrame(regs[victimRegNum-1], frame, I, victimRegNum);
-                dumpFlag = true;
-            }
-            I->setName(genRegName(I, victimRegNum));
-            regs[victimRegNum-1] = I;
-            if(dumpFlag){
-                storeToFrame(I, frame, I_next, 0);
-            }
-        }
-        for(auto iter : evicRegs){
-            Instruction *I_onStack = iter.first;
-            int regPos = iter.second;
-            loadToReg(I_onStack, frame, I_next, regPos);
-            DominatorTree DT(*I->getFunction());
-            for(BasicBlock &BB : *I->getFunction()){
-                for(Instruction &Inst : BB){
-                    if(DT.dominates(regs[regPos-1], &Inst)){
-                        Inst.replaceUsesOfWith(I_onStack, regs[regPos-1]);
-                    }
-                }
-            }
-            frame->replaceWith(I_onStack, regs[regPos-1]);
-        }
-        return 0;        
     }
     void printRegs(){
         for(int i = 0; i < regs.size(); i++){
@@ -411,34 +354,114 @@ static void renameArg(Argument &arg, int num){
     arg.setName("__arg__" + to_string(num));
 }
 
-static void depromoteReg_BB(BasicBlock &BB, Registers &regs, StackFrame &frame){
-    vector<Instruction*> instFromBB;
-    for(Instruction &I : BB){
-        instFromBB.push_back(&I);
-    }
-    for(Instruction *I : instFromBB){
-        if(!I->isTerminator()){
-            regs.putOnRegs(I, &frame);
-            outs()<<I->getName()<<"\n";
-            regs.printRegs();
-            frame.printFrame();
-        }
-    }
-}
-
 Function *LessSimpleBackend::getSpOffset(){return spOffset;}
 Function *LessSimpleBackend::getRstH(){return rstH;}
 Function *LessSimpleBackend::getRstS(){return rstS;}
+
+void LessSimpleBackend::loadOperands(
+    Instruction *I, vector<pair<Instruction*, int>> &evicRegs, 
+    vector<int> &operandOnRegs){
+        vector<Instruction*> toMoveToRegs;
+        IRBuilder<> Builder(I);
+        for(int i = 0; i < I->getNumOperands(); i++){
+            Value* operand = I->getOperand(i);
+            if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
+                int regNum = regs->findOnRegs(operand_I);
+                if(regNum > 0){
+                    operandOnRegs.push_back(regNum-1);
+                    continue;
+                }
+                int stackOffset = frame->findOnStack(operand_I);
+                if(stackOffset >= 0){
+                    toMoveToRegs.push_back(operand_I);
+                    continue;
+                }
+            }
+        }
+        for(Instruction* IOnStack : toMoveToRegs){
+            int victimRegNum=regs->tryPutOnRegs(IOnStack, I);
+            if(victimRegNum <= 0){
+                victimRegNum = regs->findVictimExcept(operandOnRegs);
+                evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
+                regs->storeToFrame(regs->getInst(victimRegNum), frame, I, victimRegNum);
+            }
+            Instruction* newInst = regs->loadToReg(IOnStack, frame, I, victimRegNum);
+            I->replaceUsesOfWith(IOnStack, newInst);
+            operandOnRegs.push_back(victimRegNum-1);
+        }
+}
+
+bool LessSimpleBackend::putOnRegs(
+    Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
+    vector<int> &operandOnRegs){
+    Instruction *I_next = I->getNextNode();
+    int victimRegNum = regs->tryPutOnRegs(I);
+    bool dumpFlag = false;
+    if(victimRegNum <= 0){
+        victimRegNum = regs->findVictimExcept(operandOnRegs);
+        evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
+        regs->storeToFrame(regs->getInst(victimRegNum), frame, I, victimRegNum);
+        dumpFlag = true;
+    }
+    I->setName(regs->genRegName(I, victimRegNum));
+    regs->setInst(I, victimRegNum);
+    return dumpFlag;
+}
+
+void LessSimpleBackend::resumeRegs(
+    Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
+    bool dumpFlag){
+    Instruction *I_next = I->getNextNode();
+    if(dumpFlag){
+        regs->storeToFrame(I, frame, I_next, 0);
+    }
+    for(int i = evicRegs.size()-1; i >= 0; i--){
+        Instruction *IOnStack = evicRegs[i].first;
+        int regPos = evicRegs[i].second;
+        regs->loadToReg(IOnStack, frame, I_next, regPos);
+        DominatorTree DT(*I->getFunction());
+        for(BasicBlock &BB : *I->getFunction()){
+            for(Instruction &Inst : BB){
+                if(DT.dominates(regs->getInst(regPos), &Inst)){
+                    Inst.replaceUsesOfWith(IOnStack, regs->getInst(regPos));
+                }
+            }
+        }
+        frame->replaceWith(IOnStack, regs->getInst(regPos));
+    }
+}
+
+void LessSimpleBackend::depromoteReg_BB(BasicBlock &BB){
+    vector<Instruction*> instList;
+    for(Instruction &I : BB){
+        instList.push_back(&I);
+    }
+    for(Instruction *I : instList){
+        if(!I->isTerminator()){
+            vector<pair<Instruction*, int>> evicRegs;
+            vector<int> operandOnRegs;
+            loadOperands(I, evicRegs, operandOnRegs);
+            bool dumpFlag = false;
+            if(I->hasName()){
+                dumpFlag = putOnRegs(I, evicRegs, operandOnRegs);
+            }
+            resumeRegs(I, evicRegs, dumpFlag);
+        }
+    }
+    
+}
 
 void LessSimpleBackend::depromoteReg(Function &F){
     for(int i = 0; i < F.arg_size(); i++){
         renameArg(*F.getArg(i), i);
     }
-    Registers regs(&F, this);
-    StackFrame frame(&F, this);
+    regs = new LessSimpleBackend::Registers(&F, this);
+    frame = new LessSimpleBackend::StackFrame(&F, this);
     for(BasicBlock &B : F){
-        depromoteReg_BB(B, regs, frame);
+        depromoteReg_BB(B);
     }
+    delete(regs);
+    delete(frame);
 }
 
 PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){

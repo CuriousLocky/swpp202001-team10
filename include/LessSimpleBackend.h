@@ -18,8 +18,25 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   llvm::Function *spOffset;
   llvm::Function *rstH;
   llvm::Function *rstS;
+  class Registers;
+  class StackFrame;
+  Registers *regs;
+  StackFrame *frame;  
   void depromoteReg(llvm::Function &F);
+  void depromoteReg_BB(llvm::BasicBlock &B);
   llvm::Function* getSpOffsetFn();
+  void loadOperands(
+    llvm::Instruction *I, 
+    std::vector<std::pair<llvm::Instruction*, int>> &evicRegs, 
+    std::vector<int> &operandOnRegs);
+  bool putOnRegs(
+    llvm::Instruction *I, 
+    std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
+    std::vector<int> &operandOnRegs);
+  void resumeRegs(
+    llvm::Instruction *I, 
+    std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
+    bool dumpFlag);
 public:
   LessSimpleBackend(std::string outputFile, bool printDepromotedModule) :
       outputFile(outputFile), printDepromotedModule(printDepromotedModule), 
