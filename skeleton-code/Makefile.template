@@ -41,5 +41,13 @@ obj/ArithmeticOptimization.o: src/ArithmeticOptimization.cpp $(GTESTSRC)
 obj/allocType.o: src/allocType.cpp $(GTESTSRC)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+***************************************Look Here*******************************************
+//Add your own object file here. If you have multiple, add them all.
+
+obj/Example.o: src/Example.cpp $(DEPS)
+    @$(CXX) $(CXXFLAGS) -c -o $@ $<
+    
+***************************************Look Here*******************************************
+
 clean:
 	rm -f sf-compiler sf-compiler-tests obj/*.o
