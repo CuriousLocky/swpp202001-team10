@@ -58,10 +58,19 @@ declare i32 @func(i32, i32, i32)
 ; To show the success of stack management, only 4 registers are allowed 
 define void @main(i32 %arg0, i32 %arg1) {
 entry:
+<<<<<<< HEAD
+=======
+  ; While translating into assembly, only the name of the register will be
+  ; preserved. For example, r1_temp1 will just be translated into r1
+>>>>>>> 0725798... Update documents for Sprint 2
   %r1_temp1 = call i32 @func(i32 1, i32 2, i32 3)
   %r2_temp2 = call i32 @func(i32 %r1_temp1, i32 2, i32 3)
   %r3_temp3 = call i32 @func(i32 %r1_temp1, i32 %r2_temp2, i32 3)
   %r4_temp4 = call i32 @func(i32 %r1_temp1, i32 %r2_temp2, i32 %r3_temp3)
+<<<<<<< HEAD
+=======
+  ; ----------------------------------------------------------------------------
+>>>>>>> 0725798... Update documents for Sprint 2
   ; The following 3 lines will be squashed into 1 line in assembly, 
   ; which is a simple 'store 4 r1 sp 0' 
   %temp_p_r1_temp1 = call i8* @__spOffset(i64 0)
@@ -216,8 +225,64 @@ declare i8* @malloc(i64)
 
 ### Test result
 
+<<<<<<< HEAD
 All these three implementations passed TA's test files and our filechecks succussfully.
 The improvement statistics 
+=======
+All these three implementations passed TA's test files and our filechecks succussfully. Regarding the cost improvements, unfortunately we were not able to get TA's tests improved due to the added complexity and the passes order. After revising the order, we will see the real improvements. 
+
+```
+==bitcount3==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==gcd==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==binary_tree==
+
+Average cost improve %: -0.01932%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount4==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount2==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount1==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==collatz==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==prime==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bubble_sort==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+
+==bitcount5==
+
+Average cost improve %: 0.00000%  
+Average heapUsage improve %: 0.00000%
+```
+>>>>>>> 0725798... Update documents for Sprint 2
 
 ## Abandoned Work
 
