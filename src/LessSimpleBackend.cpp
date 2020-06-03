@@ -110,16 +110,20 @@ class LessSimpleBackend::StackFrame{
 public:
     StackFrame(Function *F_in, LessSimpleBackend *Backend):
         F(F_in), Backend(Backend){}
-    int putOnStack(Instruction* I){return putOnStack(I, I);}
-    int putOnStack(Instruction* I, Instruction *I_current){
+    int putOnStack(Instruction* I, bool dumpFlag=true, int size=-1){return putOnStack(I, I, dumpFlag, size);}
+    int putOnStack(Instruction* I, Instruction *I_current, bool dumpFlag=true, int size=-1){
         int offset = findOnStack(I);
         if(offset < 0){
             offset = 0;
         }else{
             return offset;
         }
-        tryDumpRedundant(I_current);
-        int size = getAccessSize(I->getType());
+        if(dumpFlag){
+            tryDumpRedundant(I_current);            
+        }
+        if(size < 0){
+            size = getAccessSize(I->getType());
+        }
         bool onStackFlag = false;
         for(int i = 0; i < frame.size(); i++){
             auto content = frame[i];
@@ -245,7 +249,7 @@ public:
         CallInst *temp_p = Builder.CreateCall(
             Backend->getSpOffset(),
             {ConstantInt::getSigned(IntegerType::getInt64Ty(IOnStack->getContext()), offset)},
-            "temp_p_"+IOnStack->getName()
+            Backend->getTempPrefix()+IOnStack->getName()
         );
         Value *loadOperand = temp_p;
         if(!(IOnStack->getType()->isIntegerTy() &&
@@ -274,7 +278,7 @@ public:
         CallInst *temp_p = Builder.CreateCall(
             Backend->getSpOffset(),
             {ConstantInt::getSigned(IntegerType::getInt64Ty(IOnReg->getContext()), offset)},
-            "temp_p_"+IOnReg->getName()
+            Backend->getTempPrefix()+IOnReg->getName()
         );
         Value *loadOperand = temp_p;
         if(!(IOnReg->getType()->isIntegerTy() &&
@@ -294,7 +298,6 @@ public:
     string genRegName(Instruction *I, int regNum){
         return "r"+to_string(regNum)+"_"+I->getName().str();
     }
-
     Registers(Function *F, LessSimpleBackend *Backend):
         F(F),Backend(Backend),regs(vector<Instruction*>(REG_SIZE)){
         for(int i = 0; i < regs.size(); i++){
@@ -341,14 +344,27 @@ public:
     }
 };
 
-static string getUniqueName(string nameBase, Module &M){
+static string getUniqueFnName(string nameBase, Module &M){
     for(Function &F : M){
         if(F.getName() == nameBase){
-            return getUniqueName(nameBase+"_", M);
+            return getUniqueFnName(nameBase+"_", M);
         }
     }
     return nameBase;
 } 
+
+static string getUniquePrefix(string nameBase, Module &M){
+    for(Function &F : M){
+        for(BasicBlock &BB : F){
+            for(Instruction &I : BB){
+                if(I.getName().startswith(nameBase)){
+                    return getUniquePrefix("_"+nameBase, M);
+                }
+            }
+        }
+    }
+    return nameBase;
+}
 
 static void renameArg(Argument &arg, int num){
     arg.setName("__arg__" + to_string(num));
@@ -357,6 +373,7 @@ static void renameArg(Argument &arg, int num){
 Function *LessSimpleBackend::getSpOffset(){return spOffset;}
 Function *LessSimpleBackend::getRstH(){return rstH;}
 Function *LessSimpleBackend::getRstS(){return rstS;}
+string LessSimpleBackend::getTempPrefix(){return tempPrefix;}
 
 void LessSimpleBackend::loadOperands(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs, 
@@ -366,6 +383,9 @@ void LessSimpleBackend::loadOperands(
         for(int i = 0; i < I->getNumOperands(); i++){
             Value* operand = I->getOperand(i);
             if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
+                if(operand->getName().startswith(tempPrefix)){
+                    continue;
+                }
                 int regNum = regs->findOnRegs(operand_I);
                 if(regNum > 0){
                     operandOnRegs.push_back(regNum-1);
@@ -410,7 +430,7 @@ bool LessSimpleBackend::putOnRegs(
 
 void LessSimpleBackend::resumeRegs(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
-    bool dumpFlag){
+    bool dumpFlag=false){
     Instruction *I_next = I->getNextNode();
     if(dumpFlag){
         regs->storeToFrame(I, frame, I_next, 0);
@@ -431,24 +451,86 @@ void LessSimpleBackend::resumeRegs(
     }
 }
 
-void LessSimpleBackend::depromoteReg_BB(BasicBlock &BB){
-    vector<Instruction*> instList;
-    for(Instruction &I : BB){
-        instList.push_back(&I);
-    }
-    for(Instruction *I : instList){
-        if(!I->isTerminator()){
+void LessSimpleBackend::regAlloc(Function& F){
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            Instruction *I_p = &I;
             vector<pair<Instruction*, int>> evicRegs;
             vector<int> operandOnRegs;
-            loadOperands(I, evicRegs, operandOnRegs);
             bool dumpFlag = false;
-            if(I->hasName()){
-                dumpFlag = putOnRegs(I, evicRegs, operandOnRegs);
+            if(loadOperandsSet.count(I_p)){
+                loadOperands(I_p, evicRegs, operandOnRegs);
             }
-            resumeRegs(I, evicRegs, dumpFlag);
+            if(putOnRegsSet.count(I_p)){
+                dumpFlag = putOnRegs(I_p, evicRegs, operandOnRegs);
+            }
+            if(resumeRegsSet.count(I_p)){
+                resumeRegs(I_p, evicRegs, dumpFlag);
+            }
         }
     }
-    
+}
+
+void LessSimpleBackend::depPhi(PHINode *PI){
+    Type* phiType = PI->getIncomingValue(0)->getType();
+    int phiSize = getAccessSize(phiType);
+    BasicBlock &entryBlock = PI->getFunction()->getEntryBlock();
+    IRBuilder<> entryBuilder(entryBlock.getFirstNonPHI());
+    CallInst *phiPosOnStack_ori = entryBuilder.CreateCall(
+        spOffset,
+        {ConstantInt::getSigned(IntegerType::getInt64Ty(PI->getContext()), -1)},
+        tempPrefix+"pos_"+PI->getName()
+    );
+    Instruction *phiPosOnStack = phiPosOnStack_ori;
+    if(!(phiType->isIntegerTy() &&
+        phiType->getIntegerBitWidth()==8
+        )){
+        Value *posOnStack_cast = entryBuilder.CreateBitCast(
+            phiPosOnStack, phiType->getPointerTo(), 
+            phiPosOnStack->getName()+"_cast"
+        );
+        phiPosOnStack = dyn_cast<Instruction>(posOnStack_cast);
+        assert(phiPosOnStack);
+    }
+    int phiPosOffset = frame->putOnStack(phiPosOnStack, false, phiSize);
+    phiPosOnStack_ori->setArgOperand(0, 
+        ConstantInt::getSigned(IntegerType::getInt64Ty(PI->getContext()), phiPosOffset)
+    );
+    for(int i = 0; i < PI->getNumIncomingValues(); i++){
+        Value* inValue = PI->getIncomingValue(i);
+        BasicBlock* inBlock = PI->getIncomingBlock(i);
+        IRBuilder<> blockBuilder(inBlock->getTerminator());
+        Instruction *storePI = blockBuilder.CreateStore(
+            inValue,
+            phiPosOnStack
+        );
+        // loadOperandsSet.insert(storePI);
+        // resumeRegsSet.insert(storePI);
+    }
+    IRBuilder<> PIBuilder(PI);
+    Instruction* newPI = PIBuilder.CreateLoad(
+        phiPosOnStack,
+        PI->getName()
+    );
+    // loadOperandsSet.insert(newPI);
+    // putOnRegsSet.insert(newPI);
+    // resumeRegsSet.insert(newPI);
+    PI->replaceAllUsesWith(newPI);
+    PI->removeFromParent();
+}
+
+void LessSimpleBackend::depPhi(Function &F){
+    vector<PHINode*> phiList;
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            if(PHINode *PI = dyn_cast<PHINode>(&I)){
+                phiList.push_back(PI);
+            }
+        }
+    }
+    for(PHINode *PI : phiList){
+        depPhi(PI);
+    }
 }
 
 void LessSimpleBackend::depromoteReg(Function &F){
@@ -457,9 +539,20 @@ void LessSimpleBackend::depromoteReg(Function &F){
     }
     regs = new LessSimpleBackend::Registers(&F, this);
     frame = new LessSimpleBackend::StackFrame(&F, this);
-    for(BasicBlock &B : F){
-        depromoteReg_BB(B);
+    depPhi(F);
+    vector<Instruction*> instList;
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            if(!I.isTerminator() && !I.getName().startswith(tempPrefix)){
+                loadOperandsSet.insert(&I);
+                if(I.hasName()){
+                    putOnRegsSet.insert(&I);
+                }
+                resumeRegsSet.insert(&I);
+            }
+        }
     }
+    regAlloc(F);
     delete(regs);
     delete(frame);
 }
@@ -477,9 +570,9 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     ConstExprToInsts CEI;
     CEI.visit(M);
 
-    string rstHName = getUniqueName("__resetHeap", M);
-    string rstSName = getUniqueName("__resetStack", M);
-    string spOffsetName = getUniqueName("__spOffset", M);
+    string rstHName = getUniqueFnName("__resetHeap", M);
+    string rstSName = getUniqueFnName("__resetStack", M);
+    string spOffsetName = getUniqueFnName("__spOffset", M);
 
     Type *VoidTy = Type::getVoidTy(M.getContext());
     PointerType *I8PtrTy = PointerType::getInt8PtrTy(M.getContext());
@@ -487,6 +580,8 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
 
     FunctionType *rstTy = FunctionType::get(VoidTy, {VoidTy}, false);
     FunctionType *spOffsetTy = FunctionType::get(I8PtrTy, {I64Ty}, false);
+
+    tempPrefix = getUniquePrefix("temp_p_", M);
 
     rstH = Function::Create(rstTy, Function::ExternalLinkage, rstHName, M);
     rstS = Function::Create(rstTy, Function::ExternalLinkage, rstSName, M);
