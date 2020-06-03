@@ -1,14 +1,14 @@
 ; ModuleID = '/tmp/a.ll'
-source_filename = "./prime/src/prime.c"
-target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
-target triple = "x86_64-unknown-linux-gnu"
+source_filename = "prime/src/prime.c"
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx10.15.0"
 
-@primes = external dso_local global i64*, align 8
-@checked = external dso_local global i64, align 8
-@tail = external dso_local global i64*, align 8
+@primes = external global i64*, align 8
+@checked = external global i64, align 8
+@tail = external global i64*, align 8
 
-; Function Attrs: nounwind uwtable
-define dso_local i64 @check_with_primes(i64 %n) #0 {
+; Function Attrs: nounwind ssp uwtable
+define i64 @check_with_primes(i64 %n) #0 {
 entry:
   %0 = load i64*, i64** @primes, align 8
   br label %while.cond
@@ -68,8 +68,8 @@ declare void @llvm.lifetime.start.p0i8(i64 immarg, i8* nocapture) #1
 ; Function Attrs: argmemonly nounwind willreturn
 declare void @llvm.lifetime.end.p0i8(i64 immarg, i8* nocapture) #1
 
-; Function Attrs: nounwind uwtable
-define dso_local i64 @add_primes(i64 %n) #0 {
+; Function Attrs: nounwind ssp uwtable
+define i64 @add_primes(i64 %n) #0 {
 entry:
   br label %while.cond
 
@@ -139,11 +139,11 @@ unreachable:                                      ; preds = %cleanup
   ret i64 0
 }
 
-; Function Attrs: nounwind
-declare dso_local noalias i8* @malloc(i64) #2
+; Function Attrs: allocsize(0)
+declare noalias i8* @malloc(i64) #2
 
-; Function Attrs: nounwind uwtable
-define dso_local i64 @is_prime(i64 %n) #0 {
+; Function Attrs: nounwind ssp uwtable
+define i64 @is_prime(i64 %n) #0 {
 entry:
   %call = call i64 @check_with_primes(i64 %n)
   %cmp = icmp eq i64 %call, 0
@@ -161,10 +161,10 @@ return:                                           ; preds = %if.end, %if.then
   ret i64 %retval.0
 }
 
-; Function Attrs: nounwind uwtable
-define dso_local i32 @main() #0 {
+; Function Attrs: nounwind ssp uwtable
+define i32 @main() #0 {
 entry:
-  %call = call noalias i8* @malloc(i64 16) #4
+  %call = call i8* @malloc(i64 16) #4
   %0 = bitcast i8* %call to i64*
   store i64* %0, i64** @primes, align 8
   %1 = load i64*, i64** @primes, align 8
@@ -207,18 +207,20 @@ unreachable:                                      ; preds = %cleanup
   ret i32 0
 }
 
-declare dso_local i64 @read(...) #3
+declare i64 @read(...) #3
 
-declare dso_local void @write(i64) #3
+declare void @write(i64) #3
 
-attributes #0 = { nounwind uwtable "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="none" "less-precise-fpmad"="false" "min-legal-vector-width"="0" "no-infs-fp-math"="false" "no-jump-tables"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #0 = { nounwind ssp uwtable "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="all" "less-precise-fpmad"="false" "min-legal-vector-width"="0" "no-infs-fp-math"="false" "no-jump-tables"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #1 = { argmemonly nounwind willreturn }
-attributes #2 = { nounwind "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="none" "less-precise-fpmad"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "unsafe-fp-math"="false" "use-soft-float"="false" }
-attributes #3 = { "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="none" "less-precise-fpmad"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "unsafe-fp-math"="false" "use-soft-float"="false" }
-attributes #4 = { nounwind }
+attributes #2 = { allocsize(0) "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="all" "less-precise-fpmad"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #3 = { "correctly-rounded-divide-sqrt-fp-math"="false" "disable-tail-calls"="false" "frame-pointer"="all" "less-precise-fpmad"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-signed-zeros-fp-math"="false" "no-trapping-math"="false" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #4 = { allocsize(0) }
 
-!llvm.module.flags = !{!0}
-!llvm.ident = !{!1}
+!llvm.module.flags = !{!0, !1, !2}
+!llvm.ident = !{!3}
 
-!0 = !{i32 1, !"wchar_size", i32 4}
-!1 = !{!"clang version 10.0.1 (https://github.com/llvm/llvm-project.git d4d4c6bf834142326301a743d2939e868d9f0f0f)"}
+!0 = !{i32 2, !"SDK Version", [2 x i32] [i32 10, i32 15]}
+!1 = !{i32 1, !"wchar_size", i32 4}
+!2 = !{i32 7, !"PIC Level", i32 2}
+!3 = !{!"clang version 10.0.0 (git@github.com:llvm/llvm-project.git d32170dbd5b0d54436537b6b75beaf44324e0c28)"}

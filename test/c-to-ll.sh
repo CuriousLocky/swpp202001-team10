@@ -6,7 +6,8 @@ if [ "$#" -ne 2 ]; then
   exit 1
 fi
 
-if [[ ! -f irgen ]]; then
+IRGEN=`dirname "$BASH_SOURCE"`/irgen
+if [[ ! -f "$IRGEN" ]]; then
   echo "irgen is not built! please run ./build.sh <clang dir>"
   exit 1
 fi
@@ -18,7 +19,7 @@ else
 fi
 
 CXX=$2/clang
-
+set -e
 $CXX $ISYSROOT -O1 -fno-strict-aliasing -fno-discard-value-names -g0 $1 \
     -mllvm -disable-llvm-optzns -S -o /tmp/a.ll -emit-llvm
-./irgen /tmp/a.ll "${1%.c}.ll"
+$IRGEN /tmp/a.ll "${1%.c}.ll"

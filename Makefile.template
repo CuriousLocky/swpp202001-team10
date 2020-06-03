@@ -41,7 +41,10 @@ obj/gtest_all.o: $(GTESTSRC)
 obj/ArithmeticOptimization.o: src/ArithmeticOptimization.cpp $(GTESTSRC)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-obj/allocType.o: src/allocType.cpp $(GTESTSRC)
+obj/allocType.o: src/allocType.cpp $(DEPS)
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+obj/Alloca2reg.o: src/Alloca2reg.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
