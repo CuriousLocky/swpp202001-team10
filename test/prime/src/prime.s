@@ -4,9 +4,6 @@ start check_with_primes 1:
   .entry:
     ; init sp!
     sp = sub sp 176 64
-    r1 = malloc 8
-    r1 = malloc 8
-    r1 = malloc 8
     r1 = load 8 20480 0
     store 8 r1 sp 0
     r1 = load 8 sp 0
@@ -133,9 +130,6 @@ start add_primes 1:
   .entry:
     ; init sp!
     sp = sub sp 232 64
-    r1 = malloc 8
-    r1 = malloc 8
-    r1 = malloc 8
     store 8 0 sp 8
     r1 = load 8 sp 8
     store 8 r1 sp 0
@@ -277,9 +271,6 @@ start is_prime 1:
   .entry:
     ; init sp!
     sp = sub sp 40 64
-    r1 = malloc 8
-    r1 = malloc 8
-    r1 = malloc 8
     r1 = call check_with_primes arg1
     store 8 r1 sp 0
     r1 = load 8 sp 0
