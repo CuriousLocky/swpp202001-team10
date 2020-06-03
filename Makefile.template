@@ -26,6 +26,9 @@ obj/SimpleBackend.o: src/SimpleBackend.cpp $(DEPS)
 obj/AssemblyEmitter.o: src/AssemblyEmitter.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+obj/MallocToAlloca.o: src/MallocToAlloca.cpp $(DEPS)
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 obj/main.o: src/main.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
