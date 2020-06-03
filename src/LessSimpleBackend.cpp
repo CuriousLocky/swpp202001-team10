@@ -110,6 +110,7 @@ class LessSimpleBackend::StackFrame{
 public:
     StackFrame(Function *F_in, LessSimpleBackend *Backend):
         F(F_in), Backend(Backend){}
+    int getMaxStackSize(){return maxStackSize;}
     int putOnStack(Instruction* I, bool dumpFlag=true, int size=-1){return putOnStack(I, I, dumpFlag, size);}
     int putOnStack(Instruction* I, Instruction *I_current, bool dumpFlag=true, int size=-1){
         int offset = findOnStack(I);
@@ -533,6 +534,17 @@ void LessSimpleBackend::depPhi(Function &F){
     }
 }
 
+void LessSimpleBackend::placeSpSub(Function &F){
+    BasicBlock &entryBlock = F.getEntryBlock();
+    Instruction *entryInst = entryBlock.getFirstNonPHI();
+    IRBuilder<> Builder(entryInst);
+    int maxStackUsage = frame->getMaxStackSize();
+    Builder.CreateCall(
+        spSub,
+        {ConstantInt::getSigned(IntegerType::getInt64Ty(F.getContext()), maxStackUsage)}
+    );
+}
+
 void LessSimpleBackend::depromoteReg(Function &F){
     for(int i = 0; i < F.arg_size(); i++){
         renameArg(*F.getArg(i), i);
@@ -553,6 +565,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
         }
     }
     regAlloc(F);
+    placeSpSub(F);
     delete(regs);
     delete(frame);
 }
@@ -573,6 +586,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     string rstHName = getUniqueFnName("__resetHeap", M);
     string rstSName = getUniqueFnName("__resetStack", M);
     string spOffsetName = getUniqueFnName("__spOffset", M);
+    string spSubName = getUniqueFnName("__spSub", M);
 
     Type *VoidTy = Type::getVoidTy(M.getContext());
     PointerType *I8PtrTy = PointerType::getInt8PtrTy(M.getContext());
@@ -580,12 +594,14 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
 
     FunctionType *rstTy = FunctionType::get(VoidTy, {VoidTy}, false);
     FunctionType *spOffsetTy = FunctionType::get(I8PtrTy, {I64Ty}, false);
+    FunctionType *spSubTy = FunctionType::get(VoidTy, {I64Ty}, false);
 
     tempPrefix = getUniquePrefix("temp_p_", M);
 
     rstH = Function::Create(rstTy, Function::ExternalLinkage, rstHName, M);
     rstS = Function::Create(rstTy, Function::ExternalLinkage, rstSName, M);
     spOffset = Function::Create(spOffsetTy, Function::ExternalLinkage, spOffsetName, M);
+    spSub = Function::Create(spSubTy, Function::ExternalLinkage, spSubName, M);
 
     for(Function &F : M.getFunctionList()){
         if(!F.isDeclaration()){

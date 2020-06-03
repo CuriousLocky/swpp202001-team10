@@ -6,8 +6,8 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <map>
+#include <set>
 
 #define REG_SIZE 4
 
@@ -15,13 +15,14 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   std::string outputFile;
   std::string tempPrefix;
   bool printDepromotedModule;
-  std::unordered_map<llvm::Value*, int> stackMap;
+  std::map<llvm::Value*, int> stackMap;
   llvm::Function *spOffset;
+  llvm::Function *spSub;
   llvm::Function *rstH;
   llvm::Function *rstS;
-  std::unordered_set<llvm::Instruction*> loadOperandsSet;
-  std::unordered_set<llvm::Instruction*> putOnRegsSet;
-  std::unordered_set<llvm::Instruction*> resumeRegsSet;
+  std::set<llvm::Instruction*> loadOperandsSet;
+  std::set<llvm::Instruction*> putOnRegsSet;
+  std::set<llvm::Instruction*> resumeRegsSet;
   class Registers;
   class StackFrame;
   Registers *regs;
@@ -44,6 +45,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void depPhi(llvm::PHINode *I);
   void depPhi(llvm::Function& F);
   void regAlloc(llvm::Function& F);
+  void placeSpSub(llvm::Function& F);
 public:
   LessSimpleBackend(std::string outputFile, bool printDepromotedModule) :
       outputFile(outputFile), printDepromotedModule(printDepromotedModule) {}
