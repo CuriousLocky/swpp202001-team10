@@ -22,6 +22,6 @@ Then, use c-to-ll.sh to convert .c to mem2reg-ed .ll
 
 ### Authors
 
-Sung-Hwan Lee: binary_tree, bubble_sort, collatz, gcd, prime
+Sung-Hwan Lee: binary_tree, bubble_sort, collatz, gcd, prime, matmul1~4
 
-Juneyoung Lee: bitcountN, scripts
+Juneyoung Lee: bitcountN, scripts, rmq

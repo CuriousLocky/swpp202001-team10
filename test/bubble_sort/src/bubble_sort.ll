@@ -14,7 +14,7 @@ if.then:                                          ; preds = %entry
 
 if.end:                                           ; preds = %entry
   %mul = mul i64 %n, 8
-  %call = call i8* @malloc(i64 %mul) #4
+  %call = call noalias i8* @malloc(i64 %mul) #4
   %0 = bitcast i8* %call to i64*
   br label %for.cond
 
@@ -48,7 +48,7 @@ return:                                           ; preds = %for.end, %if.then
 declare void @llvm.lifetime.start.p0i8(i64 immarg, i8* nocapture) #1
 
 ; Function Attrs: allocsize(0)
-declare i8* @malloc(i64) #2
+declare noalias i8* @malloc(i64) #2
 
 declare i64 @read(...) #3
 

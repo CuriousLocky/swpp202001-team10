@@ -4,7 +4,6 @@ start countSetBitsRec 1:
   .entry:
     ; init sp!
     sp = sub sp 96 64
-    r1 = malloc 64
     r1 = icmp eq 0 arg1 32
     store 8 r1 sp 0
     r1 = load 8 sp 0

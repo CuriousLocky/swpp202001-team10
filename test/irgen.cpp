@@ -29,6 +29,8 @@ static cl::opt<string> optOutput(
 
 static llvm::ExitOnError ExitOnErr;
 
+static Function *MainFunc;
+
 
 // adapted from llvm-dis.cpp
 static unique_ptr<Module> openInputFile(LLVMContext &Context,
@@ -44,6 +46,38 @@ static unique_ptr<Module> openInputFile(LLVMContext &Context,
   return M;
 }
 
+class GEPOffsetToI64 : public llvm::PassInfoMixin<GEPOffsetToI64> {
+public:
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
+    LLVMContext &Cxt = F.getParent()->getContext();
+    auto *I64 = IntegerType::get(Cxt, 64);
+    for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+      auto *GEP = dyn_cast<GetElementPtrInst>(&*I);
+      if (!GEP)
+        continue;
+
+      for (auto &U: GEP->indices()) {
+        Value *V = U.get();
+        if (!V->getType()->isIntegerTy()) {
+          errs() << "ERROR: getelementptr's index should be i64!\n";
+          errs() << "\t" << *V << "\n";
+          exit(1);
+        } else if (V->getType()->getIntegerBitWidth() == 64)
+          continue;
+
+        if (auto *CI = dyn_cast<ConstantInt>(V)) {
+          U.set(ConstantInt::get(I64, CI->getSExtValue()));
+        } else {
+          errs() << "ERROR: getelementptr's index should be i64!\n";
+          errs() << "\t" << *V << "\n";
+          exit(1);
+        }
+      }
+    }
+    return PreservedAnalyses::all();
+  }
+};
+
 class RemoveUnsupportedOps : public llvm::PassInfoMixin<RemoveUnsupportedOps> {
   Constant *getZero(Type *T) {
     return T->isPointerTy() ?
@@ -54,6 +88,7 @@ class RemoveUnsupportedOps : public llvm::PassInfoMixin<RemoveUnsupportedOps> {
 public:
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
     vector<Instruction *> V;
+    LLVMContext &Cxt = F.getParent()->getContext();
     for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
       Instruction *II = &*I;
       bool Deleted = false;
@@ -63,8 +98,37 @@ public:
           V.push_back(Intr);
           Deleted = true;
         }
+      } else if (auto *CI = dyn_cast<CallInst>(II)) {
+        auto *CF = CI->getCalledFunction();
+        if (CF->getName() == "read") {
+          if (!CF->getReturnType()->isIntegerTy() ||
+              CF->getReturnType()->getIntegerBitWidth() != 64) {
+            errs() << "ERROR: read() should return i64!\n";
+            exit(1);
+          } else if (CF->arg_size() != 0) {
+            errs() << "ERROR: read() does not take any argument!\n";
+            exit(1);
+          }
+        } else if (CF->getName() == "write") {
+          if (!CF->getReturnType()->isVoidTy()) {
+            errs() << "ERROR: write() should return void!\n";
+            exit(1);
+          } else if (CF->arg_size() != 1) {
+            errs() << "ERROR: write() takes a single i64 argument!\n";
+            exit(1);
+          }
+          auto &A = *CF->arg_begin();
+          if (!A.getType()->isIntegerTy() ||
+              A.getType()->getIntegerBitWidth() != 64) {
+            errs() << "ERROR: write() takes a single i64 argument!\n";
+            exit(1);
+          }
+        } else if (CF->isDeclaration()) {
+          errs() << "ERROR: " << CF->getName() << " has no body!\n";
+          errs() << *CI << "\n";
+          exit(1);
+        }
       } else if (auto *UI = dyn_cast<UnreachableInst>(II)) {
-        LLVMContext &Cxt = F.getParent()->getContext();
         auto *RE = F.getReturnType()->isVoidTy() ? ReturnInst::Create(Cxt) :
             ReturnInst::Create(Cxt, getZero(F.getReturnType()));
         RE->insertBefore(UI);
@@ -106,15 +170,47 @@ public:
         }
       } else if (auto *GV = dyn_cast<GlobalVariable>(&G)) {
         if (GV->hasInitializer()) {
-          errs() << "ERROR: Global variables should not have initializers!\n";
-          errs() << "\t" << *GV << "\n";
-          exit(1);
+          if (GV->getValueType()->isIntegerTy()) {
+            new StoreInst(GV->getInitializer(), GV,
+                          &*MainFunc->getEntryBlock().begin());
+          } else {
+            errs() << "WARNING: Global variables should not have initializers!\n";
+            errs() << "\t" << *GV << "\n";
+          }
         }
       }
     }
     return PreservedAnalyses::all();
   }
 };
+
+class AddNoAliasToMalloc : public llvm::PassInfoMixin<AddNoAliasToMalloc> {
+public:
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM) {
+    for (auto &F : M) {
+      if (F.isDeclaration()) {
+        if (F.getName() == "malloc")
+          F.addAttribute(AttributeList::ReturnIndex, Attribute::NoAlias);
+        continue;
+      }
+
+      if (F.getName() == "main") {
+        MainFunc = &F;
+      }
+
+      for (auto I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+        auto *CI = dyn_cast<CallInst>(&*I);
+        if (!CI) continue;
+        if (CI->getCalledFunction()->getName() == "malloc" &&
+            !CI->hasRetAttr(Attribute::NoAlias)) {
+          CI->addAttribute(AttributeList::ReturnIndex, Attribute::NoAlias);
+        }
+      }
+    }
+    return PreservedAnalyses::all();
+  }
+};
+
 
 int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal(argv[0]);
@@ -143,17 +239,23 @@ int main(int argc, char **argv) {
 
 
   FunctionPassManager FPM;
-  // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FPM.addPass(SROA());
   FPM.addPass(RemoveUnsupportedOps());
   FPM.addPass(ADCEPass());
+  FPM.addPass(GEPOffsetToI64());
 
   ModulePassManager MPM;
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(AddNoAliasToMalloc());
   MPM.addPass(CheckConstExpr());
 
   // Run!
   MPM.run(*M, MAM);
+
+  if (!MainFunc) {
+    errs() << "ERROR: No main function\n";
+    return 1;
+  }
 
   error_code EC;
   raw_fd_ostream fout(optOutput, EC);

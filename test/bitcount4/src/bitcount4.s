@@ -4,7 +4,6 @@ start countSetBits 1:
   .entry:
     ; init sp!
     sp = sub sp 168 64
-    r1 = malloc 1024
     r1 = and arg1 255 32
     store 8 r1 sp 0
     r1 = load 8 sp 0

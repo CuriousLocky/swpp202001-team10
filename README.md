@@ -67,6 +67,20 @@ For example,
 
 The automater can catch undesired outputs, terminate the test and print it to `stdout`. If terminates normally, it suggests that the compiler runs okay.
 
+## Improvement Analysis
+
+You can analyze how much improvment you made by adding your Pass into `main.cpp` utilizing `compare.py`.
+
+1. Generate two `test-score.log` files, one with your Pass registered in `main.cpp` and the other without. Remember to rename the first file so that the second round of test result won't overwrite the first round's.
+2. Run `python3 ./compare.py <old-log-file> <new-log-file>` (For example, `python3 ./compare.py old-score.log with-pass.log`)
+3. Look at `improve-report.log` to see how your Pass improved the performance!
+
+For the ease of copy-and-paste:
+
+```bash
+python3 ./compare.py old-score.log with-pass.log
+```
+
 ## Commit Message Conventions
 
 There are two popular ways of writing a commit message: [Tim Pope style](https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html) (This is also recommended in the official guideline of Git, [Pro Git](https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project)), and the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) style. The latter one is preferred in many large open-source projects since it dovetails [SemVer](https://semver.org/). Here we adopt the Tim Pope style, for it's succinctness.
