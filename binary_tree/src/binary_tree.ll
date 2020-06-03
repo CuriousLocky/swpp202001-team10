@@ -26,7 +26,7 @@ if.then:                                          ; preds = %while.body
   br i1 %cmp1, label %if.then2, label %if.end
 
 if.then2:                                         ; preds = %if.then
-  %call = call i8* @malloc(i64 24) #4
+  %call = call noalias i8* @malloc(i64 24) #4
   %3 = bitcast i8* %call to i64*
   store i64 %data, i64* %3, align 8
   %add.ptr3 = getelementptr inbounds i64, i64* %3, i64 1
@@ -53,7 +53,7 @@ if.then7:                                         ; preds = %if.else
   br i1 %cmp9, label %if.then10, label %if.end16
 
 if.then10:                                        ; preds = %if.then7
-  %call12 = call i8* @malloc(i64 24) #4
+  %call12 = call noalias i8* @malloc(i64 24) #4
   %7 = bitcast i8* %call12 to i64*
   store i64 %data, i64* %7, align 8
   %add.ptr13 = getelementptr inbounds i64, i64* %7, i64 1
@@ -87,7 +87,7 @@ cleanup19:                                        ; preds = %cleanup
 declare void @llvm.lifetime.start.p0i8(i64 immarg, i8* nocapture) #1
 
 ; Function Attrs: allocsize(0)
-declare i8* @malloc(i64) #2
+declare noalias i8* @malloc(i64) #2
 
 ; Function Attrs: argmemonly nounwind willreturn
 declare void @llvm.lifetime.end.p0i8(i64 immarg, i8* nocapture) #1
