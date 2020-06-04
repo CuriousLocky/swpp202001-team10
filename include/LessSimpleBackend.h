@@ -67,13 +67,11 @@ unsigned getAccessSize(llvm::Type *T);
 
 class NewAssemblyEmitter {
   llvm::raw_ostream *fout;
-  std::string resetHeapName;
-  std::string resetStackName;
+  std::vector<std::string> dummyFunctionName{};
 public:
-  NewAssemblyEmitter(llvm::raw_ostream *fout, std::string resetHeapName, std::string resetStackName):
+  NewAssemblyEmitter(llvm::raw_ostream *fout, std::vector<std::string> dummyFunctionName):
     fout(fout),
-    resetHeapName(resetHeapName),
-    resetStackName(resetStackName)
+    dummyFunctionName(dummyFunctionName)
     {}
   void run(llvm::Module *M);
 };

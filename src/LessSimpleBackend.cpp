@@ -699,6 +699,8 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     outs() << M;
 
     // Now, let's emit assembly!
+    vector<std::string> dummyFunctionName = { 
+        rstHName, rstSName, spOffsetName, spSubName };
     error_code EC;
     raw_ostream *os =
         outputFile == "-" ? &outs() : new raw_fd_ostream(outputFile, EC);
@@ -708,7 +710,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
         exit(1);
     }
 
-    NewAssemblyEmitter Emitter(os, rstHName, rstSName);
+    NewAssemblyEmitter Emitter(os, dummyFunctionName);
     Emitter.run(&M);
 
     if (os != &outs()) delete os;

@@ -25,7 +25,11 @@ TEST(TestDemo, CheckMain) {
 
   string str;
   raw_string_ostream os(str);
-  NewAssemblyEmitter(&os, "resetHeap", "resetStack").run(M.get());
+
+  std::vector<std::string> dummyFunctionName = {
+    "resetStack", "resetHeap", "spOffset", "spSub"
+  };
+  NewAssemblyEmitter(&os, dummyFunctionName).run(M.get());
 
   str = os.str();
   // These strings should exist in the assembly!
