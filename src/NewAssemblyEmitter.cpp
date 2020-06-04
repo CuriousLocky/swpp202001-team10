@@ -20,6 +20,11 @@ string to_string(const ConstantInt &CI) {
   return std::to_string(CI.getZExtValue());
 }
 
+bool starts_with(const string &str, const string &prefix) {
+  if (str.length() < prefix.length())
+    return false;
+  return str.substr(0, prefix.length()) == prefix;
+}
 bool ends_with(const string &a, const string &suffix) {
   if (a.length() < suffix.length())
     return false;
@@ -111,7 +116,7 @@ string leaveAssemblyRegisterNameOnly(string name, bool stripCasts) {
 
 bool shouldBeMappedToAssemblyRegister(Instruction *I) {
   string name = leaveAssemblyRegisterNameOnly(I->getName().str(), true);
-  regex re("__r([0-9]+)__");
+  regex re("r([0-9]+)_.*");
   cmatch m;
   regex_match(name.c_str(), m, re);
   return !m.empty() && m[0].length() == name.length();
@@ -122,7 +127,7 @@ string getRegisterNameFromInstruction(Instruction *I, bool stripCasts) {
   raiseErrorIf(!I->hasName(), msg, I);
 
   string name = leaveAssemblyRegisterNameOnly(I->getName().str(), stripCasts);
-  regex re("__r([0-9]+)__");
+  regex re("^r([0-9]+)_.*");
   cmatch m;
   regex_match(name.c_str(), m, re);
   raiseErrorIf(m.empty() || m[0].length() != name.length(), msg, I);
@@ -475,7 +480,7 @@ public:
 
 };
 
-void AssemblyEmitter::run(Module *DepromotedM) {
+void NewAssemblyEmitter::run(Module *DepromotedM) {
   AssemblyEmitterImpl Em(resetHeapName, resetStackName);
   unsigned TotalStackUsage = 0;
   for (auto &F : *DepromotedM) {

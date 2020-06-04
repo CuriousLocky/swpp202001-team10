@@ -5,7 +5,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/SourceMgr.h"
 #include "gtest/gtest.h"
-#include "SimpleBackend.h"
+#include "LessSimpleBackend.h"
 
 using namespace llvm;
 using namespace std;
@@ -25,7 +25,7 @@ TEST(TestDemo, CheckMain) {
 
   string str;
   raw_string_ostream os(str);
-  AssemblyEmitter(&os, "resetHeap", "resetStack").run(M.get());
+  NewAssemblyEmitter(&os, "resetHeap", "resetStack").run(M.get());
 
   str = os.str();
   // These strings should exist in the assembly!

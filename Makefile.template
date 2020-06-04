@@ -20,13 +20,7 @@ test: sf-compiler-tests
 	@./sf-compiler-tests
 	@./run-filechecks.sh $(FILECHECK_PATH)
 
-obj/SimpleBackend.o: src/SimpleBackend.cpp $(DEPS)
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
 obj/LessSimpleBackend.o: src/LessSimpleBackend.cpp $(DEPS)
-	@$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-obj/AssemblyEmitter.o: src/AssemblyEmitter.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 obj/NewAssemblyEmitter.o: src/NewAssemblyEmitter.cpp $(DEPS)

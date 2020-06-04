@@ -16,7 +16,7 @@ using namespace llvm;
 using namespace std;
 
 // Return sizeof(T) in bytes.
-unsigned int getAccessSize(Type *T) {
+unsigned getAccessSize(Type *T) {
   if (isa<PointerType>(T))
     return 8;
   else if (isa<IntegerType>(T)) {
@@ -609,7 +609,22 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
         }
     }
 
-    outs()<<M;
+    outs() << M;
+
+    // Now, let's emit assembly!
+    error_code EC;
+    raw_ostream *os =
+        outputFile == "-" ? &outs() : new raw_fd_ostream(outputFile, EC);
+
+    if (EC) {
+        errs() << "Cannot open file: " << outputFile << "\n";
+        exit(1);
+    }
+
+    NewAssemblyEmitter Emitter(os, rstHName, rstSName);
+    Emitter.run(&M);
+
+    if (os != &outs()) delete os;
     
     return PreservedAnalyses::all();
 }

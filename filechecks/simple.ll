@@ -1,5 +1,5 @@
-define void @main() {
+define i32 @main() {
 ; CHECK: start main 0:
-  ret void
+  ret i32 0
 }
 ; CHECK: end main

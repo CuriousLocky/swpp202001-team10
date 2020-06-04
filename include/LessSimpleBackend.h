@@ -56,6 +56,19 @@ public:
   std::string getTempPrefix();
 };
 
-unsigned int getAccessSize(Type *T);
+unsigned getAccessSize(llvm::Type *T);
+
+class NewAssemblyEmitter {
+  llvm::raw_ostream *fout;
+  std::string resetHeapName;
+  std::string resetStackName;
+public:
+  NewAssemblyEmitter(llvm::raw_ostream *fout, std::string resetHeapName, std::string resetStackName):
+    fout(fout),
+    resetHeapName(resetHeapName),
+    resetStackName(resetStackName)
+    {}
+  void run(llvm::Module *M);
+};
 
 #endif
