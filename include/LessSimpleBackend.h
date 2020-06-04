@@ -56,4 +56,6 @@ public:
   std::string getTempPrefix();
 };
 
+unsigned int getAccessSize(Type *T);
+
 #endif

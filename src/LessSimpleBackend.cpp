@@ -16,7 +16,7 @@ using namespace llvm;
 using namespace std;
 
 // Return sizeof(T) in bytes.
-static unsigned getAccessSize(Type *T) {
+unsigned int getAccessSize(Type *T) {
   if (isa<PointerType>(T))
     return 8;
   else if (isa<IntegerType>(T)) {
