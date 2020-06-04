@@ -577,9 +577,12 @@ void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
             userInstList.push_back(userInst);
             if(
                 dyn_cast<ConstantInt>(offsetV) &&
-                (dyn_cast<StoreInst>(userInst) || 
-                dyn_cast<LoadInst>(userInst)) &&
-                userInst->getOperand(1) == GEPI
+                (
+                    (dyn_cast<StoreInst>(userInst) &&
+                    userInst->getOperand(1) == GEPI) ||
+                    (dyn_cast<LoadInst>(userInst) &&
+                    userInst->getOperand(0) == GEPI)
+                )
                 ){
                 continue;
             }else{
