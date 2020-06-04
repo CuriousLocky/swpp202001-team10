@@ -30,6 +30,11 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void depromoteReg(llvm::Function &F);
   //void depromoteReg_BB(llvm::BasicBlock &B);
   llvm::Function* getSpOffsetFn();
+  void removeInst(llvm::Instruction *I);
+  void loadRelatedOperands(
+    llvm::Instruction *tempI,
+    std::vector<llvm::Instruction*> &relatedInstList
+  );
   void loadOperands(
     llvm::Instruction *I, 
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs, 
@@ -44,6 +49,8 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     bool dumpFlag);
   void depPhi(llvm::PHINode *I);
   void depPhi(llvm::Function& F);
+  void depGEP(llvm::GetElementPtrInst *GEPI);
+  void depGEP(llvm::Function& F);
   void regAlloc(llvm::Function& F);
   void placeSpSub(llvm::Function& F);
 public:

@@ -376,6 +376,35 @@ Function *LessSimpleBackend::getRstH(){return rstH;}
 Function *LessSimpleBackend::getRstS(){return rstS;}
 string LessSimpleBackend::getTempPrefix(){return tempPrefix;}
 
+void LessSimpleBackend::removeInst(Instruction *I){
+    if(loadOperandsSet.count(I)){
+        loadOperandsSet.erase(I);
+    }
+    if(putOnRegsSet.count(I)){
+        putOnRegsSet.erase(I);
+    }
+    if(resumeRegsSet.count(I)){
+        resumeRegsSet.erase(I);
+    }
+    I->removeFromParent();
+    I->deleteValue();
+}
+
+void LessSimpleBackend::loadRelatedOperands(
+    Instruction *tempI,
+    vector<Instruction*> &relatedInstList){
+    for(int i = 0; i < tempI->getNumOperands(); i++){
+        Value *operandV = tempI->getOperand(i);
+        if(Instruction *operandI = dyn_cast<Instruction>(operandV)){
+            if(operandI->getName().startswith(tempPrefix)){
+                loadRelatedOperands(operandI, relatedInstList);
+            }else{
+                relatedInstList.push_back(operandI);
+            }
+        }
+    }
+}
+
 void LessSimpleBackend::loadOperands(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs, 
     vector<int> &operandOnRegs){
@@ -384,18 +413,23 @@ void LessSimpleBackend::loadOperands(
         for(int i = 0; i < I->getNumOperands(); i++){
             Value* operand = I->getOperand(i);
             if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
+                vector<Instruction*> relatedInstList;
                 if(operand->getName().startswith(tempPrefix)){
                     continue;
+                }else{
+                    relatedInstList.push_back(operand_I);
                 }
-                int regNum = regs->findOnRegs(operand_I);
-                if(regNum > 0){
-                    operandOnRegs.push_back(regNum-1);
-                    continue;
-                }
-                int stackOffset = frame->findOnStack(operand_I);
-                if(stackOffset >= 0){
-                    toMoveToRegs.push_back(operand_I);
-                    continue;
+                for(Instruction *relatedInst : relatedInstList){
+                    int regNum = regs->findOnRegs(relatedInst);
+                    if(regNum > 0){
+                        operandOnRegs.push_back(regNum-1);
+                        continue;
+                    }
+                    int stackOffset = frame->findOnStack(relatedInst);
+                    if(stackOffset >= 0){
+                        toMoveToRegs.push_back(relatedInst);
+                        continue;
+                    }                    
                 }
             }
         }
@@ -505,19 +539,19 @@ void LessSimpleBackend::depPhi(PHINode *PI){
             inValue,
             phiPosOnStack
         );
-        // loadOperandsSet.insert(storePI);
-        // resumeRegsSet.insert(storePI);
+        loadOperandsSet.insert(storePI);
+        resumeRegsSet.insert(storePI);
     }
     IRBuilder<> PIBuilder(PI);
     Instruction* newPI = PIBuilder.CreateLoad(
         phiPosOnStack,
         PI->getName()
     );
-    // loadOperandsSet.insert(newPI);
-    // putOnRegsSet.insert(newPI);
-    // resumeRegsSet.insert(newPI);
+    loadOperandsSet.insert(newPI);
+    putOnRegsSet.insert(newPI);
+    resumeRegsSet.insert(newPI);
     PI->replaceAllUsesWith(newPI);
-    PI->removeFromParent();
+    removeInst(PI);
 }
 
 void LessSimpleBackend::depPhi(Function &F){
@@ -531,6 +565,58 @@ void LessSimpleBackend::depPhi(Function &F){
     }
     for(PHINode *PI : phiList){
         depPhi(PI);
+    }
+}
+
+void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
+    Value *offsetV = GEPI->getOperand(1);
+    vector<Instruction*> userInstList;
+    set<Instruction*> onRegSet;
+    for(User *user : GEPI->users()){
+        if(Instruction *userInst = dyn_cast<Instruction>(user)){
+            userInstList.push_back(userInst);
+            if(
+                dyn_cast<ConstantInt>(offsetV) &&
+                (dyn_cast<StoreInst>(userInst) || 
+                dyn_cast<LoadInst>(userInst)) &&
+                userInst->getOperand(1) == GEPI
+                ){
+                continue;
+            }else{
+                onRegSet.insert(userInst);
+            }
+        }
+    }
+    for(Instruction *userInst : userInstList){
+        IRBuilder<> Builder(userInst);
+        Value *newGEPV = Builder.CreateGEP(
+            GEPI->getOperand(0),
+            offsetV,
+            tempPrefix+GEPI->getName()
+        );
+        userInst->replaceUsesOfWith(GEPI, newGEPV);
+        Instruction *newGEPI = dyn_cast<Instruction>(newGEPV);
+        loadOperandsSet.insert(newGEPI);
+        resumeRegsSet.insert(newGEPI);
+        if(onRegSet.count(userInst)){
+            newGEPV->setName("ptr_"+GEPI->getName());
+            putOnRegsSet.insert(newGEPI);
+        }
+    }
+    removeInst(GEPI);
+}
+
+void LessSimpleBackend::depGEP(Function &F){
+    vector<GetElementPtrInst*> GEPIList;
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            if(GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(&I)){
+                GEPIList.push_back(GEPI);
+            }
+        }
+    }
+    for(GetElementPtrInst *GEPI : GEPIList){
+        depGEP(GEPI);
     }
 }
 
@@ -551,7 +637,6 @@ void LessSimpleBackend::depromoteReg(Function &F){
     }
     regs = new LessSimpleBackend::Registers(&F, this);
     frame = new LessSimpleBackend::StackFrame(&F, this);
-    depPhi(F);
     vector<Instruction*> instList;
     for(BasicBlock &BB : F){
         for(Instruction &I : BB){
@@ -564,6 +649,8 @@ void LessSimpleBackend::depromoteReg(Function &F){
             }
         }
     }
+    depPhi(F);
+    depGEP(F);
     regAlloc(F);
     placeSpSub(F);
     delete(regs);
@@ -592,7 +679,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     PointerType *I8PtrTy = PointerType::getInt8PtrTy(M.getContext());
     IntegerType *I64Ty = IntegerType::getInt64Ty(M.getContext());
 
-    FunctionType *rstTy = FunctionType::get(VoidTy, {VoidTy}, false);
+    FunctionType *rstTy = FunctionType::get(VoidTy, {}, false);
     FunctionType *spOffsetTy = FunctionType::get(I8PtrTy, {I64Ty}, false);
     FunctionType *spSubTy = FunctionType::get(VoidTy, {I64Ty}, false);
 
