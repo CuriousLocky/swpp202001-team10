@@ -12,14 +12,39 @@
 #include "llvm/IR/Module.h"
 #include "MallocToAllocaOpt.h"
 #include <vector>
+#include <map>
 
 using namespace llvm;
 using namespace std;
 using namespace llvm::PatternMatch;
 
+vector <Instruction *> inst_to_change;
+vector <Instruction *> inst_to_remove;
+map <Instruction *, bool> m;
+
+bool find_free(Instruction *I) {
+  m[I] = true;
+  for (auto itr = I->use_begin(), end = I->use_end(); itr != end;) {    // see all uses of this malloc variable
+    Use &U = *itr++;
+    User *Usr = U.getUser();
+    if (Instruction *UsrI = dyn_cast<Instruction>(Usr)) {
+      if(CallInst *CI = dyn_cast<CallInst>(UsrI)) {
+        if (CI->getCalledFunction()->getName() == "free") {           // current inst is free -> malloc is freed
+          inst_to_remove.push_back(UsrI);
+          return true; 
+        }
+      }
+      if (isa<StoreInst>(UsrI) && m[dyn_cast<Instruction>(UsrI->getOperand(1))] == false) 
+        return find_free(dyn_cast<Instruction>(UsrI->getOperand(1)));
+      
+      if (isa<BitCastInst> (UsrI) || isa<LoadInst>(UsrI) && m[UsrI] == false)
+       return find_free(UsrI);  
+    }
+  }
+  return false;
+}
+
 PreservedAnalyses MallocToAllocaOpt::run(Function &F, FunctionAnalysisManager &FAM) {
-  vector <Instruction *> inst_to_change;
-  vector <Instruction *> inst_to_remove;
   LLVMContext &Context = F.getContext();
   //DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(F);
 // Going through all instructions to find all malloc's that have been freed before function end  
@@ -27,17 +52,9 @@ PreservedAnalyses MallocToAllocaOpt::run(Function &F, FunctionAnalysisManager &F
     for (auto &I : BB)
       if (auto *CB = dyn_cast<CallBase>(&I)) 
         if (CB->getCalledFunction()->getName() == "malloc")                   // current instruction is malloc call
-          for (auto itr = I.use_begin(), end = I.use_end(); itr != end;) {    // see all uses of this malloc variable
-            Use &U = *itr++;
-            User *Usr = U.getUser();
-            if (Instruction *UsrI = dyn_cast<Instruction>(Usr)) 
-              if(CallInst *CI = dyn_cast<CallInst>(UsrI)) 
-                if (CI->getCalledFunction()->getName() == "free") {           // current inst is free -> malloc is freed
-                  inst_to_change.push_back(&I);
-                  inst_to_remove.push_back(UsrI);
-                  inst_to_remove.push_back(&I);
-                  break;
-                }  
+          if (find_free(&I)) {
+            inst_to_change.push_back(&I);
+            inst_to_remove.push_back(&I);
           }
 
 // Changing malloc to alloca
@@ -49,7 +66,7 @@ PreservedAnalyses MallocToAllocaOpt::run(Function &F, FunctionAnalysisManager &F
       num = CI->getSExtValue();
     if (num > 256)                // check size of request memory, should be less than 256 for now
       continue;  
-    
+    //outs() << *I << '\n'; 
     IRBuilder<> ParentBuilder(I);
     ConstantInt* size = ConstantInt::get(IntegerType::getInt32Ty(Context), num);
     auto *alloc = ParentBuilder.CreateAlloca(IntegerType::getInt8Ty(Context), size , "alloca_" + I->getName());
