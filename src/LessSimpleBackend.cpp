@@ -506,6 +506,43 @@ void LessSimpleBackend::regAlloc(Function& F){
     }
 }
 
+void LessSimpleBackend::depCast(CastInst *CI){
+    Value *sourceV = CI->getOperand(0);
+    Type *dstTy = CI->getDestTy();
+    Instruction::CastOps op = CI->getOpcode();
+    vector<Instruction*> userInstList;
+    for(User *user : CI->users()){
+        if(Instruction *userInst = dyn_cast<Instruction>(user)){
+            userInstList.push_back(userInst);
+        }
+    }
+    for(Instruction *userInst : userInstList){
+        IRBuilder<> Builder(userInst);
+        Value *newBCV = Builder.CreateCast(
+            op,
+            sourceV,
+            dstTy,
+            tempPrefix+sourceV->getName()+"_cast"
+        );
+        userInst->replaceUsesOfWith(CI, newBCV);
+    }
+    removeInst(CI);
+}
+
+void LessSimpleBackend::depCast(Function &F){
+    vector<CastInst*> BCIList;
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            if(CastInst *PI = dyn_cast<CastInst>(&I)){
+                BCIList.push_back(PI);
+            }
+        }
+    }
+    for(CastInst *BCI : BCIList){
+        depCast(BCI);
+    }
+}
+
 void LessSimpleBackend::depPhi(PHINode *PI){
     Type* phiType = PI->getIncomingValue(0)->getType();
     int phiSize = getAccessSize(phiType);
@@ -652,6 +689,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
             }
         }
     }
+    depCast(F);
     depPhi(F);
     depGEP(F);
     regAlloc(F);

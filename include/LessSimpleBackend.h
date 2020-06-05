@@ -47,12 +47,14 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     llvm::Instruction *I, 
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
     bool dumpFlag);
+  void depCast(llvm::CastInst *BCI);
+  void depCast(llvm::Function &F);
   void depPhi(llvm::PHINode *I);
-  void depPhi(llvm::Function& F);
+  void depPhi(llvm::Function &F);
   void depGEP(llvm::GetElementPtrInst *GEPI);
-  void depGEP(llvm::Function& F);
-  void regAlloc(llvm::Function& F);
-  void placeSpSub(llvm::Function& F);
+  void depGEP(llvm::Function &F);
+  void regAlloc(llvm::Function &F);
+  void placeSpSub(llvm::Function &F);
 public:
   LessSimpleBackend(std::string outputFile, bool printDepromotedModule) :
       outputFile(outputFile), printDepromotedModule(printDepromotedModule) {}
