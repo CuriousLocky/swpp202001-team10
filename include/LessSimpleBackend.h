@@ -20,6 +20,9 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   llvm::Function *spSub;
   llvm::Function *rstH;
   llvm::Function *rstS;
+  llvm::Function *malloc;
+  llvm::Function *main;
+  std::map<llvm::Value*, unsigned int> globalVarMap;
   std::set<llvm::Instruction*> loadOperandsSet;
   std::set<llvm::Instruction*> putOnRegsSet;
   std::set<llvm::Instruction*> resumeRegsSet;
@@ -54,8 +57,10 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void depPhi(llvm::Function &F);
   void depGEP(llvm::GetElementPtrInst *GEPI);
   void depGEP(llvm::Function &F);
+  void depGV();
   void regAlloc(llvm::Function &F);
   void placeSpSub(llvm::Function &F);
+  void buildGVMap();
 public:
   LessSimpleBackend(std::string outputFile, bool printDepromotedModule) :
       outputFile(outputFile), printDepromotedModule(printDepromotedModule) {}

@@ -740,6 +740,30 @@ void LessSimpleBackend::placeSpSub(Function &F){
     );
 }
 
+void LessSimpleBackend::depGV(){
+    outs()<<"into depGV\n";
+    for(auto const &[key, val] : globalVarMap){
+        Value *GV = key;
+        unsigned int pos = val;
+        vector<Instruction*> userInstList;
+        for(User *user : GV->users()){
+            if(Instruction* userI = dyn_cast<Instruction>(user)){
+                userInstList.push_back(userI);
+            }
+        }
+        for(Instruction *userInst : userInstList){
+            IRBuilder<> Builder(userInst);
+            Value* transV = Builder.CreateIntToPtr(
+                ConstantInt::getSigned(IntegerType::getInt64Ty(userInst->getContext()), pos),
+                GV->getType(),
+                "depGV_"+GV->getName()
+            );
+            userInst->replaceUsesOfWith(GV, transV);
+        }
+    }
+    outs()<<"out from depGV\n";
+}
+
 void LessSimpleBackend::depromoteReg(Function &F){
     for(int i = 1; i <= F.arg_size(); i++){
         renameArg(*F.getArg(i-1), i);
@@ -749,7 +773,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
     vector<Instruction*> instList;
     for(BasicBlock &BB : F){
         for(Instruction &I : BB){
-            if(!I.isTerminator() && !I.getName().startswith(tempPrefix)){
+            if((!I.isTerminator()) && !I.getName().startswith(tempPrefix)){
                 loadOperandsSet.insert(&I);
                 if(I.hasName()){
                     putOnRegsSet.insert(&I);
@@ -765,6 +789,22 @@ void LessSimpleBackend::depromoteReg(Function &F){
     placeSpSub(F);
     delete(regs);
     delete(frame);
+}
+
+void LessSimpleBackend::buildGVMap(){
+    Instruction *firstInst = main->getEntryBlock().getFirstNonPHI();
+    IRBuilder<> Builder(firstInst);
+    unsigned int addr = 20480;
+    for(GlobalValue &GV : main->getParent()->getGlobalList()){
+        unsigned int GVSize = getAccessSize(GV.getType());
+        Builder.CreateCall(
+            malloc,
+            {ConstantInt::getSigned(IntegerType::getInt64Ty(main->getContext()), GVSize)},
+            GV.getName()+"_pos"
+        );
+        globalVarMap[&GV] = addr;
+        addr = align(addr);
+    }
 }
 
 PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
@@ -800,6 +840,17 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     spOffset = Function::Create(spOffsetTy, Function::ExternalLinkage, spOffsetName, M);
     spSub = Function::Create(spSubTy, Function::ExternalLinkage, spSubName, M);
 
+    for(Function&F : M.getFunctionList()){
+        if(F.getName()=="malloc"){
+            malloc = &F;
+        }else if(F.getName()=="main"){
+            main = &F;
+        }
+    }
+
+    buildGVMap();
+    depGV();
+    
     for(Function &F : M.getFunctionList()){
         if(!F.isDeclaration()){
             depromoteReg(F);

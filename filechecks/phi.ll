@@ -14,3 +14,7 @@ bb_loop_check:
 bb_exit:
   ret i32 0
 }
+
+define i32 @main(){
+  ret i32 1
+}
