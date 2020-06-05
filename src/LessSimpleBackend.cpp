@@ -840,6 +840,9 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     spOffset = Function::Create(spOffsetTy, Function::ExternalLinkage, spOffsetName, M);
     spSub = Function::Create(spSubTy, Function::ExternalLinkage, spSubName, M);
 
+    malloc = nullptr;
+    main = nullptr;
+
     for(Function&F : M.getFunctionList()){
         if(F.getName()=="malloc"){
             malloc = &F;
@@ -847,6 +850,11 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
             main = &F;
         }
     }
+
+    if(malloc==nullptr){
+        malloc = Function::Create(spOffsetTy, Function::ExternalLinkage, "malloc", M);
+    }
+    assert(main!=nullptr);
 
     buildGVMap();
     depGV();
