@@ -27,6 +27,10 @@ unsigned getAccessSize(Type *T) {
   assert(false && "Unsupported access size type!");
 }
 
+static unsigned int align(unsigned int num, int align=16){
+    return ((num/align + !!(num%align))*align);
+}
+
 // A simple namer. :) 
 // Borrowed from SimpleBackend
 class InstNamer : public InstVisitor<InstNamer> {
@@ -38,7 +42,7 @@ public:
 
     for (BasicBlock &BB : F) {
       if (!BB.hasName())
-        BB.setName(&F.getEntryBlock() == &BB ? "entry" : "bb");
+        BB.setName(&F.getEntryBlock() == &BB ? ".entry" : ".bb");
 
       for (Instruction &I : BB)
         if (!I.hasName() && !I.getType()->isVoidTy())
@@ -120,30 +124,41 @@ public:
             return offset;
         }
         if(dumpFlag){
-            tryDumpRedundant(I_current);            
+            tryDumpRedundant(I_current);
         }
         if(size < 0){
             size = getAccessSize(I->getType());
         }
         bool onStackFlag = false;
         for(int i = 0; i < frame.size(); i++){
+            int comPos = align(offset, size);
             auto content = frame[i];
             if(content.first==nullptr){
-                if(content.second==size){
+                int emptyBegin = comPos;
+                int emptyEnd = offset + content.second;
+                int emptySize = emptyEnd - emptyBegin;
+                if(emptySize >= size){
                     frame[i] = pair(I, size);
+                    if(emptySize > size){
+                        frame.insert(frame.begin()+i+1, pair(nullptr, emptySize-size));
+                    }
+                    if(emptyBegin > offset){
+                        frame.insert(frame.begin()+i-1, pair(nullptr, emptyBegin-offset));
+                    }
+                    onStackFlag = true;
+                    break;
                 }
-                if(content.second>size){
-                    frame[i] = pair(I, size);
-                    frame.insert(frame.begin()+i, pair(nullptr, content.second-size));
-                }
-                onStackFlag = true;
-                break;
             }
             offset += content.second;
         }
         if(!onStackFlag){
+            int comPos = align(offset, size);
             auto new_content = pair(I, size);
-            frame.push_back(new_content);            
+            if(comPos > offset){
+                frame.push_back(pair(nullptr, comPos-offset));
+                offset = comPos;
+            }
+            frame.push_back(new_content);
         }
         if(maxStackSize < offset + size){
             maxStackSize = offset + size;
@@ -368,7 +383,7 @@ static string getUniquePrefix(string nameBase, Module &M){
 }
 
 static void renameArg(Argument &arg, int num){
-    arg.setName("__arg__" + to_string(num));
+    arg.setName("__arg" + to_string(num)+"__");
 }
 
 Function *LessSimpleBackend::getSpOffset(){return spOffset;}
@@ -665,6 +680,7 @@ void LessSimpleBackend::placeSpSub(Function &F){
     Instruction *entryInst = entryBlock.getFirstNonPHI();
     IRBuilder<> Builder(entryInst);
     int maxStackUsage = frame->getMaxStackSize();
+    maxStackUsage = align(maxStackUsage);
     Builder.CreateCall(
         spSub,
         {ConstantInt::getSigned(IntegerType::getInt64Ty(F.getContext()), maxStackUsage)}
@@ -672,8 +688,8 @@ void LessSimpleBackend::placeSpSub(Function &F){
 }
 
 void LessSimpleBackend::depromoteReg(Function &F){
-    for(int i = 0; i < F.arg_size(); i++){
-        renameArg(*F.getArg(i), i);
+    for(int i = 1; i <= F.arg_size(); i++){
+        renameArg(*F.getArg(i-1), i);
     }
     regs = new LessSimpleBackend::Registers(&F, this);
     frame = new LessSimpleBackend::StackFrame(&F, this);
@@ -708,8 +724,8 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     Namer.visit(M);
 
     // Second, convert known constant expressions to instructions.
-    ConstExprToInsts CEI;
-    CEI.visit(M);
+    // ConstExprToInsts CEI;
+    // CEI.visit(M);
 
     string rstHName = getUniqueFnName("__resetHeap", M);
     string rstSName = getUniqueFnName("__resetStack", M);
