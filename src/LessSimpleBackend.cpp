@@ -41,12 +41,17 @@ public:
         Arg.setName("arg");
 
     for (BasicBlock &BB : F) {
-      if (!BB.hasName())
-        BB.setName(&F.getEntryBlock() == &BB ? ".entry" : ".bb");
+      if (!BB.hasName()){
+          BB.setName(&F.getEntryBlock() == &BB ? ".entry" : ".bb");
+      }else if(!BB.getName().startswith(".")){
+          BB.setName("."+BB.getName());
+      }
 
-      for (Instruction &I : BB)
-        if (!I.hasName() && !I.getType()->isVoidTy())
-          I.setName("tmp");
+      for (Instruction &I : BB){
+        if (!I.hasName() && !I.getType()->isVoidTy()){
+          I.setName("tmp");                 
+        }
+      }
     }
   }
 };
@@ -115,8 +120,10 @@ public:
     StackFrame(Function *F_in, LessSimpleBackend *Backend):
         F(F_in), Backend(Backend){}
     int getMaxStackSize(){return maxStackSize;}
-    int putOnStack(Instruction* I, bool dumpFlag=true, int size=-1){return putOnStack(I, I, dumpFlag, size);}
-    int putOnStack(Instruction* I, Instruction *I_current, bool dumpFlag=true, int size=-1){
+    int putOnStack(Instruction* I, bool dumpFlag=true, int size=-1, int alignment=-1){
+        return putOnStack(I, I, dumpFlag, size, alignment);
+    }
+    int putOnStack(Instruction* I, Instruction *I_current, bool dumpFlag=true, int size=-1, int alignment=-1){
         int offset = findOnStack(I);
         if(offset < 0){
             offset = 0;
@@ -126,12 +133,15 @@ public:
         if(dumpFlag){
             tryDumpRedundant(I_current);
         }
-        if(size < 0){
+        if(size <= 0){
             size = getAccessSize(I->getType());
+        }
+        if(alignment <= 0){
+            alignment = size;
         }
         bool onStackFlag = false;
         for(int i = 0; i < frame.size(); i++){
-            int comPos = align(offset, size);
+            int comPos = align(offset, alignment);
             auto content = frame[i];
             if(content.first==nullptr){
                 int emptyBegin = comPos;
@@ -152,7 +162,7 @@ public:
             offset += content.second;
         }
         if(!onStackFlag){
-            int comPos = align(offset, size);
+            int comPos = align(offset, alignment);
             auto new_content = pair(I, size);
             if(comPos > offset){
                 frame.push_back(pair(nullptr, comPos-offset));
@@ -464,7 +474,12 @@ void LessSimpleBackend::loadOperands(
 bool LessSimpleBackend::putOnRegs(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
     vector<int> &operandOnRegs){
-    Instruction *I_next = I->getNextNode();
+    if(AllocaInst *AI = dyn_cast<AllocaInst>(I)){
+        I = depAlloca(AI);
+        if(I->getName().startswith(tempPrefix)){
+            return false;
+        }
+    }
     int victimRegNum = regs->tryPutOnRegs(I);
     bool dumpFlag = false;
     if(victimRegNum <= 0){
@@ -475,6 +490,9 @@ bool LessSimpleBackend::putOnRegs(
     }
     I->setName(regs->genRegName(I, victimRegNum));
     regs->setInst(I, victimRegNum);
+    if(AllocaInst *AI = dyn_cast<AllocaInst>(I)){
+        depAlloca(AI);
+    }
     return dumpFlag;
 }
 
@@ -501,23 +519,72 @@ void LessSimpleBackend::resumeRegs(
     }
 }
 
-void LessSimpleBackend::regAlloc(Function& F){
-    for(BasicBlock &BB : F){
-        for(Instruction &I : BB){
-            Instruction *I_p = &I;
-            vector<pair<Instruction*, int>> evicRegs;
-            vector<int> operandOnRegs;
-            bool dumpFlag = false;
-            if(loadOperandsSet.count(I_p)){
-                loadOperands(I_p, evicRegs, operandOnRegs);
-            }
-            if(putOnRegsSet.count(I_p)){
-                dumpFlag = putOnRegs(I_p, evicRegs, operandOnRegs);
-            }
-            if(resumeRegsSet.count(I_p)){
-                resumeRegs(I_p, evicRegs, dumpFlag);
+static bool nonOffset(Instruction *I){
+    bool nonOffsetFlag = false;
+    for(User *user : I->users()){
+        if(Instruction *userInst = dyn_cast<Instruction>(user)){
+            if(dyn_cast<CastInst>(userInst)){
+                nonOffsetFlag |= nonOffset(userInst);
+            }else if(
+                    (dyn_cast<StoreInst>(userInst) &&
+                    userInst->getOperand(1) == I) ||
+                    (dyn_cast<LoadInst>(userInst) &&
+                    userInst->getOperand(0) == I)
+                ){
+                continue;
+            }else{
+                nonOffsetFlag = true;
             }
         }
+    }
+    return nonOffsetFlag;
+}
+
+Instruction *LessSimpleBackend::depAlloca(AllocaInst *AI){
+    unsigned int allocaSize = getAccessSize(AI->getType());
+    int offset = frame->putOnStack(AI, true, allocaSize, AI->getAlignment());
+    IRBuilder<> Builder(AI);
+    Instruction *posOnStack = Builder.CreateCall(
+        spOffset,
+        {ConstantInt::getSigned(IntegerType::getInt64Ty(AI->getContext()), offset)},
+        AI->getName()
+    );
+    if(!nonOffset(AI)){
+        posOnStack->setName(tempPrefix+posOnStack->getName());
+    }
+    Value *posOnStack_castV = Builder.CreateBitCast(
+        posOnStack,
+        AI->getType(),
+        posOnStack->getName()+"_cast"
+    );
+    CastInst *posOnStack_cast = dyn_cast<CastInst>(posOnStack_castV);
+    AI->replaceAllUsesWith(posOnStack_cast);
+    depCast(posOnStack_cast);
+    frame->replaceWith(AI, posOnStack);
+    removeInst(AI);
+    return posOnStack;
+}
+
+void LessSimpleBackend::regAlloc(Function& F){
+    vector<Instruction*> instToAllocList;
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            instToAllocList.push_back(&I);
+        }
+    }
+    for(Instruction *instToAlloc : instToAllocList){
+        vector<pair<Instruction*, int>> evicRegs;
+        vector<int> operandOnRegs;
+        bool dumpFlag = false;
+        if(loadOperandsSet.count(instToAlloc)){
+            loadOperands(instToAlloc, evicRegs, operandOnRegs);
+        }
+        if(putOnRegsSet.count(instToAlloc)){
+            dumpFlag = putOnRegs(instToAlloc, evicRegs, operandOnRegs);
+        }
+        if(resumeRegsSet.count(instToAlloc)){
+            resumeRegs(instToAlloc, evicRegs, dumpFlag);
+        }        
     }
 }
 
@@ -563,26 +630,12 @@ void LessSimpleBackend::depPhi(PHINode *PI){
     int phiSize = getAccessSize(phiType);
     BasicBlock &entryBlock = PI->getFunction()->getEntryBlock();
     IRBuilder<> entryBuilder(entryBlock.getFirstNonPHI());
-    CallInst *phiPosOnStack_ori = entryBuilder.CreateCall(
-        spOffset,
-        {ConstantInt::getSigned(IntegerType::getInt64Ty(PI->getContext()), -1)},
-        tempPrefix+"pos_"+PI->getName()
+    AllocaInst *phiPosOnStack = entryBuilder.CreateAlloca(
+        phiType,
+        nullptr,
+        "pos_"+PI->getName()
     );
-    Instruction *phiPosOnStack = phiPosOnStack_ori;
-    if(!(phiType->isIntegerTy() &&
-        phiType->getIntegerBitWidth()==8
-        )){
-        Value *posOnStack_cast = entryBuilder.CreateBitCast(
-            phiPosOnStack, phiType->getPointerTo(), 
-            phiPosOnStack->getName()+"_cast"
-        );
-        phiPosOnStack = dyn_cast<Instruction>(posOnStack_cast);
-        assert(phiPosOnStack);
-    }
-    int phiPosOffset = frame->putOnStack(phiPosOnStack, false, phiSize);
-    phiPosOnStack_ori->setArgOperand(0, 
-        ConstantInt::getSigned(IntegerType::getInt64Ty(PI->getContext()), phiPosOffset)
-    );
+    putOnRegsSet.insert(phiPosOnStack);
     for(int i = 0; i < PI->getNumIncomingValues(); i++){
         Value* inValue = PI->getIncomingValue(i);
         BasicBlock* inBlock = PI->getIncomingBlock(i);

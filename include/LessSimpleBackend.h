@@ -15,7 +15,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   std::string outputFile;
   std::string tempPrefix;
   bool printDepromotedModule;
-  std::map<llvm::Value*, int> stackMap;
+  std::map<llvm::Instruction*, llvm::Value*> stackMap;
   llvm::Function *spOffset;
   llvm::Function *spSub;
   llvm::Function *rstH;
@@ -47,6 +47,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     llvm::Instruction *I, 
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
     bool dumpFlag);
+  llvm::Instruction *depAlloca(llvm::AllocaInst *AI);
   void depCast(llvm::CastInst *BCI);
   void depCast(llvm::Function &F);
   void depPhi(llvm::PHINode *I);
