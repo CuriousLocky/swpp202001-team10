@@ -44,6 +44,7 @@ if [[ "$1" == "all" ]]; then
   done
 else
   dir="$1"
+  echo "TEST RESULT:" > $res
   echo "== Run Test on ${dir} =="
   echo "#### $dir ####" >> $res
   echo " " >> $res
@@ -53,8 +54,8 @@ else
   for i in $(seq 1 $END) ; do
     input="./${dir}test/input${i}.txt"
     output="./${dir}test/output${i}.txt"
-    echo "-- input${i} --"
-    echo "== input${i} ==" >> $res
+    echo "-- input${i} --"          # To STDOUT
+    echo "== input${i} ==" >> $res  # To output file
     cat $input | $INTERPRETER tmp.s | diff $output -
     cat sf-interpreter.log >> $res
     echo " " >> $res
