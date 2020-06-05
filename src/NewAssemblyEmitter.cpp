@@ -12,6 +12,9 @@ using namespace std;
 
 namespace {
 
+// Translates cast destination registers into real registers
+map<std::string, std::string> castDestReg{};
+
 string getAccessSizeInStr(Type *T) {
   return std::to_string(getAccessSize(T));
 }
@@ -84,37 +87,11 @@ string getRegisterNameFromArgument(Argument *A) {
   raiseErrorIf(m.empty() || m[0].length() != name.length(), msg, A);
 
   int regid = stoi(m[1].str());
-  raiseErrorIf(regid <= 0 || 16 < regid, msg, A);
+  raiseErrorIf(regid <= 0 || 16 < regid, std::to_string(regid), A);
 
   // Well, allow names like arg01...
   return "arg" + std::to_string(regid);
 }
-
-// Potentially useless
-// string stripTrailingDigits(string name) {
-//   // Strip trailing numbers
-//   // e.g. remove '3' from "__r1__3"
-//   unsigned lastidx = 0;
-//   for (; lastidx < name.length(); ++lastidx) {
-//     if (!isdigit(name[name.length() - 1 - lastidx]))
-//       break;
-//   }
-//   name = name.substr(0, name.length() - lastidx);
-//   return name;
-// }
-
-// string leaveAssemblyRegisterNameOnly(string name, bool stripCasts) {
-//   name = stripTrailingDigits(name);
-//   if (stripCasts) {
-//     vector<string> suffices = {"after_trunc__", "before_zext__", "to_i1__"};
-//     for (auto &s : suffices)
-//       if (ends_with(name, s)) {
-//         name = name.substr(0, name.length() - s.length());
-//         break;
-//       }
-//   }
-//   return name;
-// }
 
 bool shouldBeMappedToAssemblyRegister(Instruction *I) {
   string name = I->getName().str();
@@ -132,8 +109,10 @@ string getRegisterNameFromInstruction(Instruction *I, bool stripCasts) {
 
   bool is_temp = starts_with(name, "temp");
   if (is_temp) {
-    // Should be handled later
-    return "temp";
+    if (castDestReg.count(name) > 0) {
+        return castDestReg.at(name);
+    }
+    return name;
   }
 
   regex re("^r([0-9]+)_.*");
@@ -174,7 +153,7 @@ public:
 class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
   vector<string> FnBody;
-  StackFrame CurrentStackFrame;
+//   StackFrame CurrentStackFrame;
   string resetHeapName;
   string resetStackName;
   string spSubName;
@@ -182,7 +161,6 @@ public:
 
 private:
   // For resolving bit_cast_ptr and offset
-  int offset;
   map<std::string, int> nameOffsetMap;
 
   // ----- Emit functions -----
@@ -223,17 +201,21 @@ private:
       // Its name should be __argN__.
       // Extract & return the argN.
       auto *ATy = A->getType();
-      raiseErrorIf(!((ATy->isIntegerTy() && ATy->getIntegerBitWidth() == 64) ||
-                     ATy->isPointerTy()), "unknown argument type", A);
+      raiseErrorIf(!((ATy->isIntegerTy()) || ATy->isPointerTy()), 
+                   "unknown argument type", A);
       return { getRegisterNameFromArgument(A), -1 };
 
-    } else if (auto *CI = dyn_cast<ConstantInt>(V)) {
+    } 
+    
+    else if (auto *CI = dyn_cast<ConstantInt>(V)) {
       return { to_string(*CI), -1 };
-
-    } else if (isa<ConstantPointerNull>(V)) {
+    } 
+    
+    else if (isa<ConstantPointerNull>(V)) {
       return { "0", -1 };
-
-    } else if (auto *CE = dyn_cast<ConstantExpr>(V)) {
+    } 
+    
+    else if (auto *CE = dyn_cast<ConstantExpr>(V)) {
       if (CE->getOpcode() == Instruction::IntToPtr) {
         auto *CI = dyn_cast<ConstantInt>(CE->getOperand(0));
         if (CI)
@@ -242,12 +224,14 @@ private:
           assert(false && "Unknown inttoptr form");
       }
       assert(false && "Unknown constantexpr");
-
-    } else if (auto *I = dyn_cast<Instruction>(V)) {
+    } 
+    
+    else if (auto *I = dyn_cast<Instruction>(V)) {
       if (isa<TruncInst>(I)) {
         // Trunc is just a wrapper for passing type cheking of IR.
         return getOperand(I->getOperand(0), shouldNotBeStackSlot);
-      } else if (shouldBeMappedToAssemblyRegister(I)) {
+      } 
+      else if (shouldBeMappedToAssemblyRegister(I)) {
         // Note that alloca can also have a register name.
         //   __r1__ = alloca i32
         // This will be lowered to:
@@ -265,7 +249,22 @@ private:
       // } 
       else if (nameOffsetMap.find(I->getName().str()) != nameOffsetMap.end()) {
         int offset = nameOffsetMap.at(I->getName().str());
-        return { "", offset };
+        return { "sp", offset };
+      }
+      else if (castDestReg.count(I->getName().str()) > 0) {
+        return { castDestReg.at(I->getName().str()), -1 };
+      }
+      else if (starts_with(I->getName().str(), "temp")) {
+      /* If this is an instruction start with temp and not resolved in 
+      nameOffsetMap or castDestReg, then  */
+        auto [DestReg, offset] = getOperand(I->getOperand(0));
+        assert(starts_with(DestReg, "arg") || starts_with(DestReg, "r"));
+        if (offset != -1) {
+          nameOffsetMap.try_emplace(I->getName().str(), offset);
+        } else {
+          castDestReg.try_emplace(I->getName().str(), DestReg);
+        }
+        return {DestReg, offset};
       }
       else {
         assert(false && "Unknown instruction type!");
@@ -286,7 +285,7 @@ public:
    {}
 
   void visitFunction(Function &F) {
-    CurrentStackFrame = StackFrame();
+    // CurrentStackFrame = StackFrame();
     FnBody.clear();
   }
 
@@ -297,7 +296,7 @@ public:
 
   // Unsupported instruction goes here.
   void visitInstruction(Instruction &I) {
-    // Instructions that are eliminated by SimpleBackend:
+    // Instructions that are eliminated by LessSimpleBackend:
     // - phi
     // - sext
     // - alloca
@@ -319,12 +318,6 @@ public:
 
  // TODO: handle dummy function here! 
   void visitStoreInst(StoreInst &SI) {
-    auto ppInst = SI.getPrevNonDebugInstruction()->getPrevNonDebugInstruction();
-    if (auto CI = dyn_cast<CallInst>(ppInst)) {
-      if (CI->getName().str() == spOffsetName) {
-
-      }
-    }
     auto [ValOp, _] = getOperand(SI.getValueOperand(), true);
     auto [PtrOp, StackOffset] = getOperand(SI.getPointerOperand(), false);
     string sz = getAccessSizeInStr(SI.getValueOperand()->getType());
@@ -406,31 +399,43 @@ public:
   void visitZExtInst(ZExtInst &ZI) {
     // This test should pass.
     (void)getRegisterNameFromInstruction(&ZI, false);
+    auto [Op1, offset] = getOperand(ZI.getOperand(0));
+    if (offset != -1) {
+      nameOffsetMap.emplace(ZI.getName().str(), offset);
+    } else {
+      castDestReg.emplace(ZI.getName().str(), Op1);
+    }
+    // castDestReg.emplace(ZI.getName().str(), resolveCast(ZI));
   }
+
+  void visitSExtInst(SExtInst &SI) {
+    // TODO: add support for sext inst
+    return;
+  }
+
   void visitTruncInst(TruncInst &TI) {
     // This test should pass.
-    if (auto *I = dyn_cast<Instruction>(TI.getOperand(0)))
+    if (auto *I = dyn_cast<Instruction>(TI.getOperand(0))) {
       (void)getRegisterNameFromInstruction(I, false);
+      auto [Op1, offset] = getOperand(TI.getOperand(0));
+      if (offset != -1) {
+        nameOffsetMap.emplace(TI.getName().str(), offset);
+      } else {
+        castDestReg.emplace(TI.getName().str(), Op1);
+      }
+      // castDestReg.emplace(TI.getName().str(), resolveCast(TI));
+    }
+      
   }
   // TODO: handle dummy function here!
   void visitBitCastInst(BitCastInst &BCI) {
-  /* --- dummy function handler space --- */
-    // See whether previous instruction is the call of dummy function
-    auto prevInst = BCI.getPrevNonDebugInstruction();
-    if (auto CI = dyn_cast<CallInst>(prevInst)) {
-      if (CI->getCalledFunction()->getName() == spOffsetName) {
-      /* Construct the 1-to-1 correspondance relationship between bitcast ptr
-         and offset */  
-        nameOffsetMap.emplace((string)BCI.getName(), offset);
-      // Do not emit assembly
-        return;
-      }
+    auto [Op1, offset] = getOperand(BCI.getOperand(0));
+    if (offset != -1) {
+      nameOffsetMap.emplace(BCI.getName().str(), offset);
+    } else {
+      castDestReg.emplace(BCI.getName().str(), Op1);
     }
-  /* --- dummy function handler space --- */
-
-    auto [Op1, _] = getOperand(BCI.getOperand(0));
-    string DestReg = getRegisterNameFromInstruction(&BCI, false);
-    emitCopy(DestReg, Op1);
+    // castDestReg.emplace(BCI.getName().str(), resolveCast(BCI));
   }
 
   void visitPtrToIntInst(PtrToIntInst &PI) {
@@ -447,22 +452,32 @@ public:
   // ---- Call ----
   // TODO: handle dummy function here!
   void visitCallInst(CallInst &CI) {
-    string FnName = (string)CI.getCalledFunction()->getName();
+    string FnName = CI.getCalledFunction()->getName().str();
     vector<string> Args;
     bool MallocOrFree = true;
-    if (FnName ==resetStackName) {
+    if (FnName == resetStackName) {
       Args.emplace_back("stack");
       emitAssembly("reset", Args);
       return;
     }
-    if (FnName==resetHeapName) {
+    if (FnName == resetHeapName) {
       Args.emplace_back("heap");
       emitAssembly("reset", Args);
       return;
     }
     // TODO: handle spOffset here!
     if (FnName == spOffsetName){
-      offset = stoi(getOperand(CI.getArgOperand(0)).first);
+      string DestReg = getRegisterNameFromInstruction(&CI, false);
+      string offset = getOperand(CI.getArgOperand(0)).first;
+      if (starts_with(DestReg, "temp")) {
+        nameOffsetMap.emplace(DestReg, stoi(offset));
+      } else {
+        Args.emplace_back("sp");
+        Args.emplace_back(offset);
+        Args.emplace_back("64");
+        emitAssembly(DestReg, "add", Args);
+      }
+      // Do not emit assembly
       return;
     }
     // TODO: handle spSub here!
@@ -474,7 +489,7 @@ public:
         Args.emplace_back("sp");
         Args.emplace_back(frameSize);
         Args.emplace_back("64");
-        emitAssembly("sub", Args);
+        emitAssembly("sp", "sub", Args);
         return;
       }
     }
@@ -485,7 +500,11 @@ public:
 
     unsigned Idx = 0;
     for (auto I = CI.arg_begin(), E = CI.arg_end(); I != E; ++I) {
-      Args.emplace_back(getOperand(*I).first);
+      string name = getOperand(*I).first;
+      if (castDestReg.count(name) > 0) {
+          name = castDestReg.at(name);
+      }
+      Args.emplace_back(name);
       ++Idx;
     }
     if (CI.hasName()) {
@@ -510,12 +529,12 @@ public:
       raiseErrorIf(!isa<ICmpInst>(BCond), msg, BCond);
 
       auto *II = dyn_cast<ICmpInst>(BCond);
-      raiseErrorIf(II->getPredicate() != ICmpInst::ICMP_NE, msg, BCond);
+      // raiseErrorIf(II->getPredicate() != ICmpInst::ICMP_NE, msg, BCond);
 
-      auto *ShouldBeZero = dyn_cast<ConstantInt>(II->getOperand(1));
-      raiseErrorIf(!ShouldBeZero || ShouldBeZero->getZExtValue() != 0, msg, BCond);
+      // auto *ShouldBeZero = dyn_cast<ConstantInt>(II->getOperand(1));
+      // raiseErrorIf(!ShouldBeZero || ShouldBeZero->getZExtValue() != 0, msg, BCond);
 
-      auto [Cond, _] = getOperand(II->getOperand(0));
+      auto Cond = getRegisterNameFromInstruction(II, false);
       emitAssembly("br", { Cond, (string)BI.getSuccessor(0)->getName(),
                                  (string)BI.getSuccessor(1)->getName()});
     }
@@ -549,23 +568,24 @@ void NewAssemblyEmitter::run(Module *DepromotedM) {
     *fout << "start " << F.getName() << " " << F.arg_size() << ":\n";
 
     assert(Em.FnBody.size() > 0);
-    raiseErrorIf(Em.CurrentStackFrame.UsedStackSize >= 10240,
-                 "Stack usage is larger than STACK_MAX!");
-    TotalStackUsage += Em.CurrentStackFrame.UsedStackSize;
-    raiseErrorIf(TotalStackUsage >= 10240, "Stack usage is larger than STACK_MAX!");
+    // raiseErrorIf(Em.CurrentStackFrame.UsedStackSize >= 10240,
+    //              "Stack usage is larger than STACK_MAX!");
+    // TotalStackUsage += Em.CurrentStackFrame.UsedStackSize;
+    // raiseErrorIf(TotalStackUsage >= 10240, "Stack usage is larger than STACK_MAX!");
 
     *fout << "  " << Em.FnBody[0] << "\n";
-    if (Em.CurrentStackFrame.UsedStackSize > 0) {
-      *fout << "    ; init sp!\n";
-      *fout << "    sp = sub sp "
-            << Em.CurrentStackFrame.UsedStackSize << " 64\n";
-    }
+    // if (Em.CurrentStackFrame.UsedStackSize > 0) {
+    //   *fout << "    ; init sp!\n";
+    //   *fout << "    sp = sub sp "
+    //         << Em.CurrentStackFrame.UsedStackSize << " 64\n";
+    // }
 
     for (unsigned i = 1; i < Em.FnBody.size(); ++i) {
       assert(Em.FnBody[i].size() > 0);
       if (Em.FnBody[i][0] == '.')
         // Basic block
         *fout << "\n  " << Em.FnBody[i] << "\n";
+
       else
         // Instruction
         *fout << "    " << Em.FnBody[i] << "\n";
