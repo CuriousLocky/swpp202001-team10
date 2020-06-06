@@ -579,6 +579,9 @@ void LessSimpleBackend::regAlloc(Function& F){
         vector<pair<Instruction*, int>> evicRegs;
         vector<int> operandOnRegs;
         bool dumpFlag = false;
+        if(instToAlloc->getName().startswith(tempPrefix)){
+            continue;
+        }
         if(loadOperandsSet.count(instToAlloc)){
             loadOperands(instToAlloc, evicRegs, operandOnRegs);
         }
@@ -586,32 +589,33 @@ void LessSimpleBackend::regAlloc(Function& F){
             dumpFlag = putOnRegs(instToAlloc, evicRegs, operandOnRegs);
         }
         if(resumeRegsSet.count(instToAlloc)){
-            resumeRegs(instToAlloc, evicRegs, dumpFlag);
+            //resumeRegs(instToAlloc, evicRegs, dumpFlag);
         }        
     }
 }
 
 void LessSimpleBackend::depCast(CastInst *CI){
-    Value *sourceV = CI->getOperand(0);
-    Type *dstTy = CI->getDestTy();
-    Instruction::CastOps op = CI->getOpcode();
-    vector<Instruction*> userInstList;
-    for(User *user : CI->users()){
-        if(Instruction *userInst = dyn_cast<Instruction>(user)){
-            userInstList.push_back(userInst);
-        }
-    }
-    for(Instruction *userInst : userInstList){
-        IRBuilder<> Builder(userInst);
-        Value *newBCV = Builder.CreateCast(
-            op,
-            sourceV,
-            dstTy,
-            tempPrefix+sourceV->getName()+"_cast"
-        );
-        userInst->replaceUsesOfWith(CI, newBCV);
-    }
-    removeInst(CI);
+    // Value *sourceV = CI->getOperand(0);
+    // Type *dstTy = CI->getDestTy();
+    // Instruction::CastOps op = CI->getOpcode();
+    // vector<Instruction*> userInstList;
+    // for(User *user : CI->users()){
+    //     if(Instruction *userInst = dyn_cast<Instruction>(user)){
+    //         userInstList.push_back(userInst);
+    //     }
+    // }
+    // for(Instruction *userInst : userInstList){
+    //     IRBuilder<> Builder(userInst);
+    //     Value *newBCV = Builder.CreateCast(
+    //         op,
+    //         sourceV,
+    //         dstTy,
+    //         tempPrefix+sourceV->getName()+"_cast"
+    //     );
+    //     userInst->replaceUsesOfWith(CI, newBCV);
+    // }
+    // removeInst(CI);
+    CI->setName(tempPrefix+CI->getName());
 }
 
 void LessSimpleBackend::depCast(Function &F){
@@ -661,7 +665,9 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
         phiPosOnStack,
         PI->getName()
     );
-    replaceUseOfWithIn(PI, newPI, PI->getParent());
+    //replaceUseOfWithIn(PI, newPI, PI->getParent());
+    PI->replaceAllUsesWith(newPI);
+    removeInst(PI);
     loadOperandsSet.insert(newPI);
     putOnRegsSet.insert(newPI);
     resumeRegsSet.insert(newPI);
@@ -682,34 +688,37 @@ void LessSimpleBackend::depPhi(Function &F){
     for(PHINode *PI : phiList){
         phiMap[PI] = depPhi(PI);
     }
-    for(PHINode *PI : phiList){
-        set<BasicBlock*> useBlockSet;
-        for(User *user : PI->users()){
-            if(Instruction *userInst = dyn_cast<Instruction>(user)){
-                useBlockSet.insert(userInst->getParent());
-            }
-        }
-        phiUseBlockMap[PI] = useBlockSet;
-    }
-    for(auto iter : phiUseBlockMap){
-        PHINode *PI = iter.first;
-        set<BasicBlock*> useBlockSet = iter.second;
-        for(BasicBlock *useBlock : useBlockSet){
-            IRBuilder<> Builder(useBlock->getFirstNonPHI());
-            Instruction *newLoadInst = Builder.CreateLoad(
-                phiMap[PI],
-                PI->getName()
-            );
-            replaceUseOfWithIn(PI, newLoadInst, useBlock);
-            loadOperandsSet.insert(newLoadInst);
-            putOnRegsSet.insert(newLoadInst);
-            resumeRegsSet.insert(newLoadInst);
-        }
-        removeInst(PI);
-    }
-    for(PHINode *PI : phiList){
+    // for(PHINode *PI : phiList){
+    //     set<BasicBlock*> useBlockSet;
+    //     for(User *user : PI->users()){
+    //         if(Instruction *userInst = dyn_cast<Instruction>(user)){
+    //             if(!dyn_cast<PHINode>(userInst)){
+    //                 useBlockSet.insert(userInst->getParent());
+    //             }
+    //         }
+    //     }
+    //     phiUseBlockMap[PI] = useBlockSet;
+    // }
+    // for(auto iter : phiUseBlockMap){
+    //     PHINode *PI = iter.first;
+    //     set<BasicBlock*> useBlockSet = iter.second;
+    //     for(BasicBlock *useBlock : useBlockSet){
+    //         IRBuilder<> Builder(useBlock->getFirstNonPHI());
+    //         Instruction *newLoadInst = Builder.CreateLoad(
+    //             phiMap[PI],
+    //             PI->getName()
+    //         );
+    //         replaceUseOfWithIn(PI, newLoadInst, useBlock);
+    //         loadOperandsSet.insert(newLoadInst);
+    //         putOnRegsSet.insert(newLoadInst);
+    //         resumeRegsSet.insert(newLoadInst);
+    //     }
+    //     PI->replaceAllUsesWith(UndefValue::get(PI->getType()));
+    //     removeInst(PI);
+    // }
+    // for(PHINode *PI : phiList){
         
-    }
+    // }
 }
 
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
@@ -917,7 +926,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
     vector<Instruction*> instList;
     for(BasicBlock &BB : F){
         for(Instruction &I : BB){
-            if((!I.isTerminator()) && !I.getName().startswith(tempPrefix)){
+            if(!I.getName().startswith(tempPrefix)){
                 loadOperandsSet.insert(&I);
                 if(I.hasName()){
                     putOnRegsSet.insert(&I);
@@ -947,7 +956,7 @@ void LessSimpleBackend::buildGVMap(){
             GV.getName()+"_pos"
         );
         globalVarMap[&GV] = addr;
-        addr = align(addr);
+        addr += align(GVSize);
     }
 }
 
