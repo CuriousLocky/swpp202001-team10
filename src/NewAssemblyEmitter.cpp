@@ -497,9 +497,14 @@ public:
     }
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
-    auto [Op1, _] = getOperand(II.getOperand(0));
-    string DestReg = getRegisterNameFromInstruction(&II, tempPrefix);
-    emitCopy(DestReg, Op1);
+    auto [Op1, offset] = getOperand(II.getOperand(0));
+    // string DestReg = getRegisterNameFromInstruction(&II, tempPrefix);
+    // emitCopy(DestReg, Op1);
+    if (offset != -1) {
+      nameOffsetMap.emplace(II.getName().str(), offset);
+    } else {
+      castDestReg.emplace(II.getName().str(), Op1);
+    }
   }
 
   // ---- Call ----
