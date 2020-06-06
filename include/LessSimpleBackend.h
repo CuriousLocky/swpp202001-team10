@@ -59,7 +59,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   llvm::Instruction *depAlloca(llvm::AllocaInst *AI);
   void depCast(llvm::CastInst *BCI);
   void depCast(llvm::Function &F);
-  void depPhi(llvm::PHINode *I);
+  llvm::Instruction *depPhi(llvm::PHINode *PI);
   void depPhi(llvm::Function &F);
   void depGEP(llvm::GetElementPtrInst *GEPI);
   void depGEP(llvm::Function &F);

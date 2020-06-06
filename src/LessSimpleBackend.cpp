@@ -211,10 +211,8 @@ public:
             if(iter.first!=nullptr){
                 eleName = iter.first->getName();
             }
-            // outs()<<"{"+eleName+"\t"+to_string(offset+iter.second)+"}";
             offset += iter.second;
         }
-        // outs()<<"\n\n";
     }
     void replaceWith(Instruction *oldInst, Instruction *newInst){
         for(int i = 0; i < frame.size(); i++){
@@ -364,9 +362,7 @@ public:
             if(regs[i]!=nullptr){
                 regName = regs[i]->getName();
             }
-            // outs()<<"r"+to_string(i+1)+"\t"+regName+"\n";
         }
-        // outs()<<"\n";
     }
     void replaceWith(Instruction *oldInst, Instruction *newInst){
         for(int i = 0; i < regs.size(); i++){
@@ -632,7 +628,13 @@ void LessSimpleBackend::depCast(Function &F){
     }
 }
 
-void LessSimpleBackend::depPhi(PHINode *PI){
+static void replaceUseOfWithIn(Value *oldVal, Value *newVal, BasicBlock *BB){
+    for(Instruction &I : BB->getInstList()){
+        I.replaceUsesOfWith(oldVal, newVal);
+    }
+}
+
+Instruction *LessSimpleBackend::depPhi(PHINode *PI){
     Type* phiType = PI->getIncomingValue(0)->getType();
     int phiSize = getAccessSize(phiType);
     BasicBlock &entryBlock = PI->getFunction()->getEntryBlock();
@@ -659,21 +661,17 @@ void LessSimpleBackend::depPhi(PHINode *PI){
         phiPosOnStack,
         PI->getName()
     );
-    if(PI->getNumUses() >= 1){
-        PIBuilder.CreateStore(
-            newPI,
-            phiPosOnStack
-        );
-    }
+    replaceUseOfWithIn(PI, newPI, PI->getParent());
     loadOperandsSet.insert(newPI);
     putOnRegsSet.insert(newPI);
     resumeRegsSet.insert(newPI);
-    PI->replaceAllUsesWith(newPI);
-    removeInst(PI);
+    return phiPosOnStack;
 }
 
 void LessSimpleBackend::depPhi(Function &F){
     vector<PHINode*> phiList;
+    map<PHINode*, Instruction*> phiMap;
+    map<PHINode*, set<BasicBlock*>> phiUseBlockMap;
     for(BasicBlock &BB : F){
         for(Instruction &I : BB){
             if(PHINode *PI = dyn_cast<PHINode>(&I)){
@@ -682,7 +680,35 @@ void LessSimpleBackend::depPhi(Function &F){
         }
     }
     for(PHINode *PI : phiList){
-        depPhi(PI);
+        phiMap[PI] = depPhi(PI);
+    }
+    for(PHINode *PI : phiList){
+        set<BasicBlock*> useBlockSet;
+        for(User *user : PI->users()){
+            if(Instruction *userInst = dyn_cast<Instruction>(user)){
+                useBlockSet.insert(userInst->getParent());
+            }
+        }
+        phiUseBlockMap[PI] = useBlockSet;
+    }
+    for(auto iter : phiUseBlockMap){
+        PHINode *PI = iter.first;
+        set<BasicBlock*> useBlockSet = iter.second;
+        for(BasicBlock *useBlock : useBlockSet){
+            IRBuilder<> Builder(useBlock->getFirstNonPHI());
+            Instruction *newLoadInst = Builder.CreateLoad(
+                phiMap[PI],
+                PI->getName()
+            );
+            replaceUseOfWithIn(PI, newLoadInst, useBlock);
+            loadOperandsSet.insert(newLoadInst);
+            putOnRegsSet.insert(newLoadInst);
+            resumeRegsSet.insert(newLoadInst);
+        }
+        removeInst(PI);
+    }
+    for(PHINode *PI : phiList){
+        
     }
 }
 
@@ -754,7 +780,6 @@ void LessSimpleBackend::placeSpSub(Function &F){
 }
 
 void LessSimpleBackend::depGV(){
-    // outs()<<"into depGV\n";
     for(auto const &[key, val] : globalVarMap){
         Value *GV = key;
         unsigned int pos = val;
@@ -774,7 +799,6 @@ void LessSimpleBackend::depGV(){
             userInst->replaceUsesOfWith(GV, transV);
         }
     }
-    // outs()<<"out from depGV\n";
 }
 
 int LessSimpleBackend::getAccessPos(Value *V){
@@ -1002,7 +1026,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     NewAssemblyEmitter Emitter(os, dummyFunctionName);
     Emitter.run(&M);
 
-    // if (os != &outs()) delete os;
+    if (os != &outs()) delete os;
     
     return PreservedAnalyses::all();
 }
