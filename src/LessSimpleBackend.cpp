@@ -211,10 +211,10 @@ public:
             if(iter.first!=nullptr){
                 eleName = iter.first->getName();
             }
-            outs()<<"{"+eleName+"\t"+to_string(offset+iter.second)+"}";
+            // outs()<<"{"+eleName+"\t"+to_string(offset+iter.second)+"}";
             offset += iter.second;
         }
-        outs()<<"\n\n";
+        // outs()<<"\n\n";
     }
     void replaceWith(Instruction *oldInst, Instruction *newInst){
         for(int i = 0; i < frame.size(); i++){
@@ -364,9 +364,9 @@ public:
             if(regs[i]!=nullptr){
                 regName = regs[i]->getName();
             }
-            outs()<<"r"+to_string(i+1)+"\t"+regName+"\n";
+            // outs()<<"r"+to_string(i+1)+"\t"+regName+"\n";
         }
-        outs()<<"\n";
+        // outs()<<"\n";
     }
     void replaceWith(Instruction *oldInst, Instruction *newInst){
         for(int i = 0; i < regs.size(); i++){
@@ -754,7 +754,7 @@ void LessSimpleBackend::placeSpSub(Function &F){
 }
 
 void LessSimpleBackend::depGV(){
-    outs()<<"into depGV\n";
+    // outs()<<"into depGV\n";
     for(auto const &[key, val] : globalVarMap){
         Value *GV = key;
         unsigned int pos = val;
@@ -774,7 +774,7 @@ void LessSimpleBackend::depGV(){
             userInst->replaceUsesOfWith(GV, transV);
         }
     }
-    outs()<<"out from depGV\n";
+    // outs()<<"out from depGV\n";
 }
 
 int LessSimpleBackend::getAccessPos(Value *V){
@@ -989,7 +989,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
 
     // Now, let's emit assembly!
     vector<std::string> dummyFunctionName = { 
-        rstHName, rstSName, spOffsetName, spSubName };
+        rstHName, rstSName, spOffsetName, spSubName, tempPrefix };
     error_code EC;
     raw_ostream *os =
         outputFile == "-" ? &outs() : new raw_fd_ostream(outputFile, EC);
@@ -1002,7 +1002,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     NewAssemblyEmitter Emitter(os, dummyFunctionName);
     Emitter.run(&M);
 
-    if (os != &outs()) delete os;
+    // if (os != &outs()) delete os;
     
     return PreservedAnalyses::all();
 }

@@ -101,13 +101,13 @@ bool shouldBeMappedToAssemblyRegister(Instruction *I) {
   return !m.empty();
 }
 
-string getRegisterNameFromInstruction(Instruction *I, bool stripCasts) {
+string getRegisterNameFromInstruction(Instruction *I, std::string tempPrefix) {
   const string msg = "incorrect instruction name";
   raiseErrorIf(!I->hasName(), msg, I);
 
   string name = I->getName().str();
 
-  bool is_temp = starts_with(name, "temp");
+  bool is_temp = starts_with(name, tempPrefix);
   if (is_temp) {
     if (castDestReg.count(name) > 0) {
         return castDestReg.at(name);
@@ -127,28 +127,28 @@ string getRegisterNameFromInstruction(Instruction *I, bool stripCasts) {
 }
 
 // Since allocas are eliminated in backend, StackFrame counting is unnecessary
-class StackFrame {
-public:
-  unsigned UsedStackSize;
+// class StackFrame {
+// public:
+//   unsigned UsedStackSize;
 
-  StackFrame() : UsedStackSize(0) {}
+//   StackFrame() : UsedStackSize(0) {}
 
-  void subStackPtr(unsigned offset) {
-    UsedStackSize += offset;
-  }
+//   void subStackPtr(unsigned offset) {
+//     UsedStackSize += offset;
+//   }
 
-  // void addAlloca(AllocaInst *I) {
-  //   assert(!AllocaStackOffset.count(I));
-  //   AllocaStackOffset[I] = UsedStackSize;
-  //   UsedStackSize += (getAccessSize(I->getAllocatedType()) + 7) / 8 * 8;
-  // }
+//   void addAlloca(AllocaInst *I) {
+//     assert(!AllocaStackOffset.count(I));
+//     AllocaStackOffset[I] = UsedStackSize;
+//     UsedStackSize += (getAccessSize(I->getAllocatedType()) + 7) / 8 * 8;
+//   }
 
-  // unsigned getStackOffset(AllocaInst *I) const {
-  //   auto Itr = AllocaStackOffset.find(I);
-  //   assert(Itr != AllocaStackOffset.end());
-  //   return Itr->second;
-  // }
-};
+//   unsigned getStackOffset(AllocaInst *I) const {
+//     auto Itr = AllocaStackOffset.find(I);
+//     assert(Itr != AllocaStackOffset.end());
+//     return Itr->second;
+//   }
+// };
 
 class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
@@ -158,10 +158,13 @@ public:
   string resetStackName;
   string spSubName;
   string spOffsetName;
+  string tempPrefix;
 
 private:
   // For resolving bit_cast_ptr and offset
-  map<std::string, int> nameOffsetMap;
+  unordered_map<std::string, int> nameOffsetMap;
+  unordered_map<std::string, std::pair<std::string, unsigned int>> ptrResolver;
+  set<llvm::Value*> sextResolver; 
 
   // ----- Emit functions -----
   void _emitAssemblyBody(const string &Cmd, const vector<string> &Ops,
@@ -223,6 +226,15 @@ private:
         else
           assert(false && "Unknown inttoptr form");
       }
+      else if (CE->getOpcode() == Instruction::GetElementPtr) {
+        if (ptrResolver.count(CE->getName().str()) > 0) {
+          auto tmp = ptrResolver.at(CE->getName().str());
+          return { tmp.first, tmp.second };
+        } else {
+          raiseError("GEP not handled", CE);
+          assert(false && "GEP not handled");
+        }
+      }
       assert(false && "Unknown constantexpr");
     } 
     
@@ -237,24 +249,38 @@ private:
         // This will be lowered to:
         //   r1 = add sp, <offset>
         checkRegisterType(I);
-        return { getRegisterNameFromInstruction(I, true), -1 };
+        return { getRegisterNameFromInstruction(I, tempPrefix), -1 };
       } 
-      // allocas are eliminated
-      // else if (auto *AI = dyn_cast<AllocaInst>(V)) {
-      //   raiseErrorIf(shouldNotBeStackSlot, "alloca cannot come here", AI);
-
-      //   // alloca's name should not start with __r..!
-      //   raiseErrorIf(!AI->hasName(), "alloca does not have name!", AI);
-      //   return { "" , CurrentStackFrame.getStackOffset(AI) };
-      // } 
+      //// allocas are eliminated
+      //// else if (auto *AI = dyn_cast<AllocaInst>(V)) {
+      ////   raiseErrorIf(shouldNotBeStackSlot, "alloca cannot come here", AI);
+      ////   raiseErrorIf(!AI->hasName(), "alloca does not have name!", AI);
+      ////   return { "" , CurrentStackFrame.getStackOffset(AI) };
+      //// } 
       else if (nameOffsetMap.find(I->getName().str()) != nameOffsetMap.end()) {
         int offset = nameOffsetMap.at(I->getName().str());
         return { "sp", offset };
       }
       else if (castDestReg.count(I->getName().str()) > 0) {
         return { castDestReg.at(I->getName().str()), -1 };
+      } 
+      else if (ptrResolver.count(I->getName().str()) > 0) {
+        auto tmp = ptrResolver.at(I->getName().str());
+        return { tmp.first, tmp.second };
       }
-      else if (starts_with(I->getName().str(), "temp")) {
+      else if (sextResolver.count(I) > 0) {
+        auto SI = dyn_cast<SExtInst>(I);
+        string regToSExt = SI->getOperand(0)->getName().str();
+
+        auto from = SI->getDestTy()->getIntegerBitWidth();
+        auto   to = SI->getSrcTy()->getIntegerBitWidth();
+        string sz = std::to_string(to - from);
+
+        emitAssembly(regToSExt, "shl", {regToSExt, sz, "64"});
+        emitAssembly(regToSExt, "ashr", {regToSExt, sz, "64"});
+        return { regToSExt, -2 };
+      }
+      else if (starts_with(I->getName().str(), tempPrefix)) {
       /* If this is an instruction start with temp and not resolved in 
       nameOffsetMap or castDestReg, then  */
         auto [DestReg, offset] = getOperand(I->getOperand(0));
@@ -281,11 +307,15 @@ public:
     resetHeapName(dummyFunctionName[0]),
     resetStackName(dummyFunctionName[1]),
     spOffsetName(dummyFunctionName[2]),
-    spSubName(dummyFunctionName[3])
+    spSubName(dummyFunctionName[3]),
+    tempPrefix(dummyFunctionName[4])
    {}
 
   void visitFunction(Function &F) {
     // CurrentStackFrame = StackFrame();
+    /* To save memory */
+    castDestReg = {};
+    nameOffsetMap = {};
     FnBody.clear();
   }
 
@@ -298,7 +328,6 @@ public:
   void visitInstruction(Instruction &I) {
     // Instructions that are eliminated by LessSimpleBackend:
     // - phi
-    // - sext
     // - alloca
     raiseError(I);
   }
@@ -306,24 +335,30 @@ public:
   // ---- Memory operations ----
   void visitLoadInst(LoadInst &LI) {
     auto [PtrOp, StackOffset] = getOperand(LI.getPointerOperand(), false);
-    string Dest = getRegisterNameFromInstruction(&LI, true);
+    string Dest = getRegisterNameFromInstruction(&LI, tempPrefix);
     string sz = getAccessSizeInStr(LI.getType());
 
-    if (StackOffset != -1)
-      // load stack
-      emitAssembly(Dest, "load", {sz, "sp", std::to_string(StackOffset)});
+    if (StackOffset != -1) {
+      if (starts_with(PtrOp, tempPrefix))
+        emitAssembly(Dest, "load", {sz, "sp", std::to_string(StackOffset)});
+      else
+        emitAssembly(Dest, "load", {sz, PtrOp, std::to_string(StackOffset)});
+    }
     else
       emitAssembly(Dest, "load", {sz, PtrOp, "0"});
   }
 
- // TODO: handle dummy function here! 
   void visitStoreInst(StoreInst &SI) {
     auto [ValOp, _] = getOperand(SI.getValueOperand(), true);
     auto [PtrOp, StackOffset] = getOperand(SI.getPointerOperand(), false);
     string sz = getAccessSizeInStr(SI.getValueOperand()->getType());
     
-    if (StackOffset != -1)
-      emitAssembly("store", {sz, ValOp, "sp", std::to_string(StackOffset)});
+    if (StackOffset != -1) {
+      if (starts_with(PtrOp, tempPrefix))
+        emitAssembly("store", {sz, ValOp, "sp", std::to_string(StackOffset)});
+      else
+        emitAssembly("store", {sz, ValOp, PtrOp, std::to_string(StackOffset)});
+    }
     else
       emitAssembly("store", {sz, ValOp, PtrOp, "0"});
   }
@@ -332,7 +367,7 @@ public:
   void visitBinaryOperator(BinaryOperator &BO) {
     auto [Op1, unused_1] = getOperand(BO.getOperand(0));
     auto [Op2, unused_2] = getOperand(BO.getOperand(1));
-    string DestReg = getRegisterNameFromInstruction(&BO, true); // iN -> i64
+    string DestReg = getRegisterNameFromInstruction(&BO, tempPrefix); // iN -> i64
     string Cmd;
     string sz = std::to_string(BO.getType()->getIntegerBitWidth());
 
@@ -364,7 +399,7 @@ public:
 
     auto [Op1, unused_1] = getOperand(II.getOperand(0));
     auto [Op2, unused_2] = getOperand(II.getOperand(1));
-    string DestReg = getRegisterNameFromInstruction(&II, true); // i1 -> i64
+    string DestReg = getRegisterNameFromInstruction(&II, tempPrefix); // i1 -> i64
     string pred = ICmpInst::getPredicateName(II.getPredicate()).str();
     auto *OpTy = II.getOperand(0)->getType();
     string sz = std::to_string(
@@ -376,29 +411,44 @@ public:
     auto [Op1, unused_1] = getOperand(SI.getOperand(0));
     auto [Op2, unused_2] = getOperand(SI.getOperand(1));
     auto [Op3, unused_3] = getOperand(SI.getOperand(2));
-    string DestReg = getRegisterNameFromInstruction(&SI, false);
+    string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
     emitAssembly(DestReg, "select", {Op1, Op2, Op3});
   }
+  // TODO: support GEP
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
-    // Allow 'gep i8* ptr, i' only.
+  /*
+  <result> = getelementptr <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
+  <result> = getelementptr inbounds <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
+  <result> = getelementptr <ty>, <ptr vector> <ptrval>, [inrange] <vector index type> <idx>
+  */
     raiseErrorIf(GEPI.getNumIndices() != 1, "Too many indices", &GEPI);
 
     Type *PtrTy = GEPI.getPointerOperandType();
     raiseErrorIf(!PtrTy->getPointerElementType()->isIntegerTy(),
                  "Unsupported pointer type", &GEPI);
-    raiseErrorIf(PtrTy->getPointerElementType()->getIntegerBitWidth() != 8,
-                 "Unsupported pointer type", &GEPI);
+    // Suppress this error since we support more datatypes
+    // raiseErrorIf(PtrTy->getPointerElementType()->getIntegerBitWidth() != 8,
+    //              "Unsupported pointer type: not i8", &GEPI);
+
+    auto byte = PtrTy->getPointerElementType()->getIntegerBitWidth() / 8;
 
     auto [Op1, unused_1] = getOperand(GEPI.getOperand(0));
     auto [Op2, unused_2] = getOperand(GEPI.getOperand(1));
-    string DestReg = getRegisterNameFromInstruction(&GEPI, false);
-    emitAssembly(DestReg, "add", {Op1, Op2, "64"});
+    string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
+    if (starts_with(DestReg, tempPrefix)) {
+      // 需要存儲 GEPI 名字 (以後需要解決), corresponding ptr name, corresponding offset
+      ptrResolver.emplace(DestReg, std::pair(Op1, byte));
+    } 
+    else if (starts_with(DestReg, "r_")) {
+      // emitAssembly(DestReg, "mul", {DestReg, std::to_string(bw)});
+      assert(false && "還沒能力處理這個\n");
+    }
   }
 
   // Casts
   void visitZExtInst(ZExtInst &ZI) {
     // This test should pass.
-    (void)getRegisterNameFromInstruction(&ZI, false);
+    (void)getRegisterNameFromInstruction(&ZI, tempPrefix);
     auto [Op1, offset] = getOperand(ZI.getOperand(0));
     if (offset != -1) {
       nameOffsetMap.emplace(ZI.getName().str(), offset);
@@ -410,24 +460,23 @@ public:
 
   void visitSExtInst(SExtInst &SI) {
     // TODO: add support for sext inst
-    return;
+    sextResolver.emplace(&SI);
   }
 
   void visitTruncInst(TruncInst &TI) {
     // This test should pass.
     if (auto *I = dyn_cast<Instruction>(TI.getOperand(0))) {
-      (void)getRegisterNameFromInstruction(I, false);
+      (void)getRegisterNameFromInstruction(I, tempPrefix);
       auto [Op1, offset] = getOperand(TI.getOperand(0));
       if (offset != -1) {
         nameOffsetMap.emplace(TI.getName().str(), offset);
       } else {
         castDestReg.emplace(TI.getName().str(), Op1);
       }
-      // castDestReg.emplace(TI.getName().str(), resolveCast(TI));
     }
       
   }
-  // TODO: handle dummy function here!
+  // * Support for bitCast + spOffset
   void visitBitCastInst(BitCastInst &BCI) {
     auto [Op1, offset] = getOperand(BCI.getOperand(0));
     if (offset != -1) {
@@ -435,22 +484,26 @@ public:
     } else {
       castDestReg.emplace(BCI.getName().str(), Op1);
     }
-    // castDestReg.emplace(BCI.getName().str(), resolveCast(BCI));
   }
 
   void visitPtrToIntInst(PtrToIntInst &PI) {
-    auto [Op1, _] = getOperand(PI.getOperand(0));
-    string DestReg = getRegisterNameFromInstruction(&PI, false);
-    emitCopy(DestReg, Op1);
+    auto [Op1, offset] = getOperand(PI.getOperand(0));
+    // string DestReg = getRegisterNameFromInstruction(&PI, tempPrefix);
+    // emitCopy(DestReg, Op1);
+    if (offset != -1) {
+      nameOffsetMap.emplace(PI.getName().str(), offset);
+    } else {
+      castDestReg.emplace(PI.getName().str(), Op1);
+    }
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
     auto [Op1, _] = getOperand(II.getOperand(0));
-    string DestReg = getRegisterNameFromInstruction(&II, false);
+    string DestReg = getRegisterNameFromInstruction(&II, tempPrefix);
     emitCopy(DestReg, Op1);
   }
 
   // ---- Call ----
-  // TODO: handle dummy function here!
+  // * handle dummy function here!
   void visitCallInst(CallInst &CI) {
     string FnName = CI.getCalledFunction()->getName().str();
     vector<string> Args;
@@ -465,11 +518,11 @@ public:
       emitAssembly("reset", Args);
       return;
     }
-    // TODO: handle spOffset here!
+    // * handle spOffset here!
     if (FnName == spOffsetName){
-      string DestReg = getRegisterNameFromInstruction(&CI, false);
+      string DestReg = getRegisterNameFromInstruction(&CI, tempPrefix);
       string offset = getOperand(CI.getArgOperand(0)).first;
-      if (starts_with(DestReg, "temp")) {
+      if (starts_with(DestReg, tempPrefix)) {
         nameOffsetMap.emplace(DestReg, stoi(offset));
       } else {
         Args.emplace_back("sp");
@@ -480,7 +533,7 @@ public:
       // Do not emit assembly
       return;
     }
-    // TODO: handle spSub here!
+    // * handle spSub here!
     if (FnName == spSubName){
       string frameSize = getOperand(CI.getArgOperand(0)).first;
       if (!stoi(frameSize)) {
@@ -508,7 +561,7 @@ public:
       ++Idx;
     }
     if (CI.hasName()) {
-      string DestReg = getRegisterNameFromInstruction(&CI, false);
+      string DestReg = getRegisterNameFromInstruction(&CI, tempPrefix);
       emitAssembly(DestReg, MallocOrFree ? FnName : "call", Args);
     } else {
       emitAssembly(MallocOrFree ? FnName : "call", Args);
@@ -517,7 +570,11 @@ public:
 
   // ---- Terminators ----
   void visitReturnInst(ReturnInst &RI) {
-    raiseErrorIf(RI.getReturnValue() == nullptr, "ret should have value", &RI);
+    // if (RI.getReturnValue()->getName().str() == "void") {
+    //   emitAssembly("ret", {});
+    //   return;
+    // }
+    // raiseErrorIf(RI.getReturnValue() == nullptr, "ret should have value", &RI);
     emitAssembly("ret", { getOperand(RI.getReturnValue()).first });
   }
   void visitBranchInst(BranchInst &BI) {
@@ -534,7 +591,7 @@ public:
       // auto *ShouldBeZero = dyn_cast<ConstantInt>(II->getOperand(1));
       // raiseErrorIf(!ShouldBeZero || ShouldBeZero->getZExtValue() != 0, msg, BCond);
 
-      auto Cond = getRegisterNameFromInstruction(II, false);
+      auto Cond = getRegisterNameFromInstruction(II, tempPrefix);
       emitAssembly("br", { Cond, (string)BI.getSuccessor(0)->getName(),
                                  (string)BI.getSuccessor(1)->getName()});
     }
