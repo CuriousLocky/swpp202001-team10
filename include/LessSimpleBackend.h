@@ -11,6 +11,11 @@
 
 #define REG_SIZE 4
 
+#define POS_STACK 1
+#define POS_UNKNOWN 0
+#define POS_HEAP -1
+#define POS_UNINIT -2
+
 class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   std::string outputFile;
   std::string tempPrefix;
@@ -32,6 +37,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   StackFrame *frame;  
   void depromoteReg(llvm::Function &F);
   //void depromoteReg_BB(llvm::BasicBlock &B);
+  int getAccessPos(llvm::Value *V);
   llvm::Function* getSpOffsetFn();
   void removeInst(llvm::Instruction *I);
   void loadRelatedOperands(
@@ -58,6 +64,11 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void depGEP(llvm::GetElementPtrInst *GEPI);
   void depGEP(llvm::Function &F);
   void depGV();
+  int insertRst(llvm::BasicBlock &BB);
+  void insertRst_first(
+    llvm::BasicBlock &BB,
+    std::map<llvm::BasicBlock*, int> accessPosMap);
+  void insertRst(llvm::Function &F);
   void regAlloc(llvm::Function &F);
   void placeSpSub(llvm::Function &F);
   void buildGVMap();

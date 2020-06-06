@@ -5,6 +5,7 @@
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Support/raw_os_ostream.h"
 #include <string>
 #include <sstream>
@@ -79,16 +80,22 @@ class LessSimpleBackend::StackFrame{
     Function *F;
     LessSimpleBackend *Backend;
     int maxStackSize = 0;
-    bool usedAfter(Instruction *I, Instruction *I_checked){
+    bool usedAfter(Instruction *I, Instruction *I_current){
         DominatorTree DT(*F);
+        bool usedFlag = false;
         for(auto *User : I->users()){
             if(Instruction *UserI = dyn_cast<Instruction>(User)){
-                if(UserI==I_checked || !DT.dominates(UserI, I_checked)){
+                if(dyn_cast<CastInst>(UserI)){
+                    usedFlag |= usedAfter(UserI, I_current);
+                }else if(UserI==I_current || !DT.dominates(UserI, I_current)){
+                    usedFlag = true;
+                }
+                if(usedFlag){
                     return true;
                 }
             }
         }
-        return false;
+        return usedFlag;
     }
     void mergeEmpty(){
         for(int i = 1; i < frame.size(); i++){
@@ -652,6 +659,12 @@ void LessSimpleBackend::depPhi(PHINode *PI){
         phiPosOnStack,
         PI->getName()
     );
+    if(PI->getNumUses() >= 1){
+        PIBuilder.CreateStore(
+            newPI,
+            phiPosOnStack
+        );
+    }
     loadOperandsSet.insert(newPI);
     putOnRegsSet.insert(newPI);
     resumeRegsSet.insert(newPI);
@@ -762,6 +775,113 @@ void LessSimpleBackend::depGV(){
         }
     }
     outs()<<"out from depGV\n";
+}
+
+int LessSimpleBackend::getAccessPos(Value *V){
+    if(StoreInst *SI = dyn_cast<StoreInst>(V)){
+        return getAccessPos(SI->getOperand(1));
+    }else if(LoadInst *LI = dyn_cast<LoadInst>(V)){
+        return getAccessPos(LI->getOperand(0));
+    }else if(BitCastInst *BCI = dyn_cast<BitCastInst>(V)){
+        return getAccessPos(BCI->getOperand(0));
+    }else if(IntToPtrInst *ITPI = dyn_cast<IntToPtrInst>(V)){
+        Value *sourceV = ITPI->getOperand(0);
+        ConstantInt *sourceInt = dyn_cast<ConstantInt>(sourceV);
+        assert(sourceInt);
+        int64_t posAddr = sourceInt->getSExtValue();
+        if(posAddr >= 20480){
+            return POS_HEAP;
+        }else if(posAddr <= 10240){
+            return POS_STACK;
+        }
+    }else if(CallInst *CI = dyn_cast<CallInst>(V)){
+        Function *calledFunc = CI->getCalledFunction();
+        if(calledFunc == spOffset){
+            return POS_STACK;
+        }else if(calledFunc == malloc){
+            return POS_HEAP;
+        }
+    }
+    return POS_UNKNOWN;
+}
+
+int LessSimpleBackend::insertRst(BasicBlock &BB){
+    int accessPos = POS_UNINIT;
+    for(Instruction &I : BB){
+        Instruction *I_p = &I;
+        int currentAccess = POS_UNINIT;
+        if(dyn_cast<StoreInst>(I_p) ||
+            dyn_cast<LoadInst>(I_p)){
+            currentAccess = getAccessPos(I_p);
+        }
+        if(currentAccess!=POS_UNINIT && currentAccess!=accessPos){
+            IRBuilder<> Builder(I_p);
+            if(currentAccess == POS_STACK){
+                Builder.CreateCall(rstS, {});
+            }else if(currentAccess == POS_HEAP){
+                Builder.CreateCall(rstH, {});
+            }
+            accessPos = POS_UNKNOWN;
+        }
+    }
+    return accessPos;
+}
+
+static int getPrevAccessPos(BasicBlock *BB, map<BasicBlock*, int> accessPosMap){
+    int accessPos = POS_UNINIT;
+    for(BasicBlock *predBlock : predecessors(BB)){
+        int prevAccessPos_temp = accessPosMap[predBlock];
+        if(prevAccessPos_temp == POS_UNINIT){
+            prevAccessPos_temp = getPrevAccessPos(predBlock, accessPosMap);
+        }
+        if(accessPos == POS_UNINIT){
+            accessPos = prevAccessPos_temp;
+        }
+        if(prevAccessPos_temp == POS_UNKNOWN ||
+            prevAccessPos_temp != accessPos){
+            return POS_UNKNOWN;
+        }
+    }
+    if(accessPos == POS_UNINIT)
+        return POS_UNKNOWN;
+    return accessPos;
+}
+
+void LessSimpleBackend::insertRst_first(BasicBlock &BB, map<BasicBlock*, int> accessPosMap){
+    int prevAccessPos = getPrevAccessPos(&BB, accessPosMap);
+    if(prevAccessPos == POS_UNKNOWN){
+        return;
+    }
+    for(Instruction &I : BB){
+        int currentAccess = POS_UNINIT;
+        if(dyn_cast<StoreInst>(&I) ||
+            dyn_cast<LoadInst>(&I)){
+            currentAccess = getAccessPos(&I);
+        }
+        if(currentAccess != POS_UNINIT){
+            if(currentAccess != POS_UNKNOWN &&
+                currentAccess != prevAccessPos){
+                IRBuilder<> Builder(&I);
+                if(currentAccess == POS_STACK){
+                    Builder.CreateCall(rstS, {});
+                }else if(currentAccess == POS_HEAP){
+                    Builder.CreateCall(rstH, {});
+                }
+            }
+            return;
+        }
+    }
+}
+
+void LessSimpleBackend::insertRst(Function &F){
+    map<BasicBlock*, int> accessPosMap;
+    for(BasicBlock &BB : F){
+        int lastAccess = insertRst(BB);
+        accessPosMap[&BB] = lastAccess;
+    }
+    for(BasicBlock &BB : F){
+        insertRst_first(BB, accessPosMap);
+    }
 }
 
 void LessSimpleBackend::depromoteReg(Function &F){
