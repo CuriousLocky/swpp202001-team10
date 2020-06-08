@@ -20,10 +20,12 @@ using namespace llvm::PatternMatch;
 
 vector <Instruction *> inst_to_change;
 vector <Instruction *> inst_to_remove;
-map <Instruction *, bool> m;
+vector <Instruction *> used;
+//map <Instruction *, bool> m;
 
 bool find_free(Instruction *I) {
-  m[I] = true;
+  //m[I] = true;
+  used.push_back(I);
   for (auto itr = I->use_begin(), end = I->use_end(); itr != end;) {    // see all uses of this malloc variable
     Use &U = *itr++;
     User *Usr = U.getUser();
@@ -34,11 +36,26 @@ bool find_free(Instruction *I) {
           return true; 
         }
       }
-      if (isa<StoreInst>(UsrI) && m[dyn_cast<Instruction>(UsrI->getOperand(1))] == false) 
-        return find_free(dyn_cast<Instruction>(UsrI->getOperand(1)));
-      
-      if (isa<BitCastInst> (UsrI) || isa<LoadInst>(UsrI) && m[UsrI] == false)
-       return find_free(UsrI);  
+
+      if (isa<StoreInst>(UsrI)) { 
+        bool flag = true;
+        for (int i = 0; i < used.size(); ++i)
+          if (used[i] == dyn_cast<Instruction>(UsrI->getOperand(1)))
+            flag = false;
+          
+        if (flag)  
+          return find_free(dyn_cast<Instruction>(UsrI->getOperand(1)));
+      }
+
+      if (isa<BitCastInst> (UsrI) || isa<LoadInst>(UsrI)) {
+        bool flag = true;
+        for (int i = 0; i < used.size(); ++i)
+          if (used[i] == UsrI)
+            flag = false;
+
+        if (flag)
+          return find_free(UsrI);  
+      }
     }
   }
   return false;
@@ -46,7 +63,6 @@ bool find_free(Instruction *I) {
 
 PreservedAnalyses MallocToAllocaOpt::run(Function &F, FunctionAnalysisManager &FAM) {
   LLVMContext &Context = F.getContext();
-  //DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(F);
 // Going through all instructions to find all malloc's that have been freed before function end  
   for (auto &BB : F)  
     for (auto &I : BB)
@@ -71,23 +87,13 @@ PreservedAnalyses MallocToAllocaOpt::run(Function &F, FunctionAnalysisManager &F
     ConstantInt* size = ConstantInt::get(IntegerType::getInt32Ty(Context), num);
     auto *alloc = ParentBuilder.CreateAlloca(IntegerType::getInt8Ty(Context), size , "alloca_" + I->getName());
     I->replaceAllUsesWith(alloc);
-  /*  
-  // Create an array type of i8, because output of malloc is i8    
-    ArrayType* arrayType = ArrayType::get(IntegerType::getInt8Ty(Context), num);
-  // Insert alloca before malloc
-    IRBuilder<> ParentBuilder(I);
-    auto *alloc = ParentBuilder.CreateAlloca(arrayType, nullptr, "alloc");
-  // Get pointer to first element
-    Value* idxList[2] = {ConstantInt::get(IntegerType::getInt32Ty(Context), 0), ConstantInt::get(IntegerType::getInt32Ty(Context), 0)};
-    GetElementPtrInst* gepInst = GetElementPtrInst::Create(arrayType, alloc, ArrayRef<Value*>(idxList, 2), I->getName(), I);
-    outs() << *gepInst->getType() << ' ' << *I->getType() << '\n';
-  // Replace malloc instruction  
-    I->replaceAllUsesWith(gepInst);*/
   }
+
 // Remove malloc and free instructions
   for (auto *I: inst_to_remove) {
     I->removeFromParent();
   }
+// Print result  
   for (auto &BB : F) {
     for (Instruction &I : BB)
       outs() << "\t" << I << "\n";
