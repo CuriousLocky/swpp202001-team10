@@ -16,26 +16,49 @@
 using namespace llvm;
 using namespace std;
 
+static Value *unCast(CastInst *CI){
+    Value *operandV = CI->getOperand(0);
+    if(CastInst *operandCI = dyn_cast<CastInst>(operandV)){
+        return unCast(operandCI);
+    }else{
+        return operandV;
+    }
+}
 
-static bool nonOffset(Instruction *I){
-    bool nonOffsetFlag = false;
-    for(User *user : I->users()){
-        if(Instruction *userInst = dyn_cast<Instruction>(user)){
-            if(dyn_cast<CastInst>(userInst)){
-                nonOffsetFlag |= nonOffset(userInst);
-            }else if(
-                    (dyn_cast<StoreInst>(userInst) &&
-                    userInst->getOperand(1) == I) ||
-                    (dyn_cast<LoadInst>(userInst) &&
-                    userInst->getOperand(0) == I)
-                ){
-                continue;
+static int nonOffset(Instruction *I){
+    bool varFlag;
+    for(int i = 0; i < I->getNumOperands(); i++){
+        Value *operandV = I->getOperand(i);
+        if(CastInst *operandCI = dyn_cast<CastInst>(operandV)){
+            operandV = unCast(operandCI);
+        }
+        if(!dyn_cast<Constant>(operandV)){
+            if(varFlag){
+                return 1;
             }else{
-                nonOffsetFlag = true;
+                varFlag = true;
             }
         }
     }
-    return nonOffsetFlag;
+    for(User *user : I->users()){
+        Value *userV = user;
+        if(CastInst *CI = dyn_cast<CastInst>(userV)){
+            userV = unCast(CI);
+        }
+        if(Instruction *userInst = dyn_cast<Instruction>(user)){
+            if(
+                (dyn_cast<StoreInst>(userInst) &&
+                userInst->getOperand(1) == I) ||
+                (dyn_cast<LoadInst>(userInst) &&
+                userInst->getOperand(0) == I)
+                ){
+                continue;
+            }else{
+                return 2;
+            }
+        }
+    }
+    return 0;
 }
 
 static bool _mayVisitAfter(
@@ -881,20 +904,26 @@ void LessSimpleBackend::depPhi(Function &F){
 }
 
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
-    Value *offsetV = GEPI->getOperand(1);
     vector<Instruction*> userInstList;
     set<Instruction*> onRegSet;
+    int nonOffsetPos = nonOffset(GEPI);
+    if(nonOffsetPos == 0){
+        GEPI->setName(tempPrefix+GEPI->getName());
+    }else if(nonOffsetPos == 1){
+        return;
+    }
+    vector<Value*>offSetList;
+    for(int i = 1; i < GEPI->getNumOperands(); i++){
+        offSetList.push_back(GEPI->getOperand(i));
+    }
     for(User *user : GEPI->users()){
         if(Instruction *userInst = dyn_cast<Instruction>(user)){
             userInstList.push_back(userInst);
             if(
-                dyn_cast<ConstantInt>(offsetV) &&
-                (
-                    (dyn_cast<StoreInst>(userInst) &&
-                    userInst->getOperand(1) == GEPI) ||
-                    (dyn_cast<LoadInst>(userInst) &&
-                    userInst->getOperand(0) == GEPI)
-                )
+                (dyn_cast<StoreInst>(userInst) &&
+                userInst->getOperand(1) == GEPI) ||
+                (dyn_cast<LoadInst>(userInst) &&
+                userInst->getOperand(0) == GEPI)
                 ){
                 continue;
             }else{
@@ -906,7 +935,7 @@ void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
         IRBuilder<> Builder(userInst);
         Value *newGEPV = Builder.CreateGEP(
             GEPI->getOperand(0),
-            offsetV,
+            offSetList,
             tempPrefix+GEPI->getName()
         );
         userInst->replaceUsesOfWith(GEPI, newGEPV);
@@ -1131,8 +1160,8 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     Namer.visit(M);
 
     // Second, convert known constant expressions to instructions.
-    // ConstExprToInsts CEI;
-    // CEI.visit(M);
+    ConstExprToInsts CEI;
+    CEI.visit(M);
 
     string rstHName = getUniqueFnName("__resetHeap", M);
     string rstSName = getUniqueFnName("__resetStack", M);
