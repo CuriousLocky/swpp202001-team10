@@ -987,29 +987,29 @@ void LessSimpleBackend::depGV(){
             }
         }
         for(Instruction *userInst : userInstList){
-            IRBuilder<> Builder(userInst);
-            Value* transV = Builder.CreateIntToPtr(
+            IntToPtrInst *ITPI = new IntToPtrInst(
                 ConstantInt::getSigned(IntegerType::getInt64Ty(userInst->getContext()), pos),
                 GV->getType(),
-                "depGV_"+GV->getName()
+                "depGV_"+GV->getName(),
+                userInst
             );
-            userInst->replaceUsesOfWith(GV, transV);
+            userInst->replaceUsesOfWith(GV, ITPI);
         }
     }
 }
 
 int LessSimpleBackend::getAccessPos(Value *V){
+    outs()<<"\t"<<*V<<"\n";
     if(StoreInst *SI = dyn_cast<StoreInst>(V)){
         return getAccessPos(SI->getOperand(1));
     }else if(LoadInst *LI = dyn_cast<LoadInst>(V)){
         return getAccessPos(LI->getOperand(0));
-    }else if(BitCastInst *BCI = dyn_cast<BitCastInst>(V)){
-        return getAccessPos(BCI->getOperand(0));
-    }else if(IntToPtrInst *ITPI = dyn_cast<IntToPtrInst>(V)){
-        Value *sourceV = ITPI->getOperand(0);
-        ConstantInt *sourceInt = dyn_cast<ConstantInt>(sourceV);
-        assert(sourceInt);
-        int64_t posAddr = sourceInt->getSExtValue();
+    }else if(CastInst *CastI = dyn_cast<CastInst>(V)){
+        return getAccessPos(unCast(CastI));
+    }else if(GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(V)){
+        return getAccessPos(GEPI->getOperand(0));
+    }else if(ConstantInt *CInt = dyn_cast<ConstantInt>(V)){
+        int64_t posAddr = CInt->getSExtValue();
         if(posAddr >= 20480){
             return POS_HEAP;
         }else if(posAddr <= 10240){
@@ -1034,16 +1034,19 @@ int LessSimpleBackend::insertRst(BasicBlock &BB){
         if(dyn_cast<StoreInst>(I_p) ||
             dyn_cast<LoadInst>(I_p)){
             currentAccess = getAccessPos(I_p);
+        }else{
+            continue;
         }
-        if(currentAccess!=POS_UNINIT && currentAccess!=accessPos){
+        outs()<<*I_p<<": " <<currentAccess<<"\n";
+        if(accessPos!=POS_UNINIT && accessPos!=POS_UNKNOWN && currentAccess!=accessPos){
             IRBuilder<> Builder(I_p);
             if(currentAccess == POS_STACK){
                 Builder.CreateCall(rstS, {});
             }else if(currentAccess == POS_HEAP){
                 Builder.CreateCall(rstH, {});
             }
-            accessPos = POS_UNKNOWN;
         }
+        accessPos = currentAccess;
     }
     return accessPos;
 }
@@ -1126,9 +1129,9 @@ void LessSimpleBackend::depromoteReg(Function &F){
     depCast(F);
     depPhi(F);
     depGEP(F);
-    outs()<<F;
     regAlloc(F);
     depAlloca(F);
+    insertRst(F);
     placeSpSub(F);
     delete(regs);
     delete(frame);
