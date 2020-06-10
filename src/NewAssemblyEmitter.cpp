@@ -164,7 +164,7 @@ private:
   // For resolving bit_cast_ptr and offset
   unordered_map<std::string, int> nameOffsetMap;
   unordered_map<std::string, std::pair<std::string, unsigned int>> ptrResolver;
-  set<llvm::Value*> sextResolver; 
+  set<llvm::Value*> sextResolver;
 
   // ----- Emit functions -----
   void _emitAssemblyBody(const string &Cmd, const vector<string> &Ops,
@@ -204,20 +204,20 @@ private:
       // Its name should be __argN__.
       // Extract & return the argN.
       auto *ATy = A->getType();
-      raiseErrorIf(!((ATy->isIntegerTy()) || ATy->isPointerTy()), 
+      raiseErrorIf(!((ATy->isIntegerTy()) || ATy->isPointerTy()),
                    "unknown argument type", A);
       return { getRegisterNameFromArgument(A), -1 };
 
-    } 
-    
+    }
+
     else if (auto *CI = dyn_cast<ConstantInt>(V)) {
       return { to_string(*CI), -1 };
-    } 
-    
+    }
+
     else if (isa<ConstantPointerNull>(V)) {
       return { "0", -1 };
-    } 
-    
+    }
+
     else if (auto *CE = dyn_cast<ConstantExpr>(V)) {
       if (CE->getOpcode() == Instruction::IntToPtr) {
         auto *CI = dyn_cast<ConstantInt>(CE->getOperand(0));
@@ -232,17 +232,16 @@ private:
           return { tmp.first, tmp.second };
         } else {
           raiseError("GEP not handled", CE);
-          assert(false && "GEP not handled");
         }
       }
       assert(false && "Unknown constantexpr");
-    } 
-    
+    }
+
     else if (auto *I = dyn_cast<Instruction>(V)) {
       if (isa<TruncInst>(I)) {
         // Trunc is just a wrapper for passing type cheking of IR.
         return getOperand(I->getOperand(0), shouldNotBeStackSlot);
-      } 
+      }
       else if (shouldBeMappedToAssemblyRegister(I)) {
         // Note that alloca can also have a register name.
         //   __r1__ = alloca i32
@@ -250,20 +249,20 @@ private:
         //   r1 = add sp, <offset>
         checkRegisterType(I);
         return { getRegisterNameFromInstruction(I, tempPrefix), -1 };
-      } 
+      }
       //// allocas are eliminated
       //// else if (auto *AI = dyn_cast<AllocaInst>(V)) {
       ////   raiseErrorIf(shouldNotBeStackSlot, "alloca cannot come here", AI);
       ////   raiseErrorIf(!AI->hasName(), "alloca does not have name!", AI);
       ////   return { "" , CurrentStackFrame.getStackOffset(AI) };
-      //// } 
+      //// }
       else if (nameOffsetMap.find(I->getName().str()) != nameOffsetMap.end()) {
         int offset = nameOffsetMap.at(I->getName().str());
         return { "sp", offset };
       }
       else if (castDestReg.count(I->getName().str()) > 0) {
         return { castDestReg.at(I->getName().str()), -1 };
-      } 
+      }
       else if (ptrResolver.count(I->getName().str()) > 0) {
         auto tmp = ptrResolver.at(I->getName().str());
         return { tmp.first, tmp.second };
@@ -281,7 +280,7 @@ private:
         return { regToSExt, -2 };
       }
       else if (starts_with(I->getName().str(), tempPrefix)) {
-      /* If this is an instruction start with temp and not resolved in 
+      /* If this is an instruction start with temp and not resolved in
       nameOffsetMap or castDestReg, then  */
         auto [DestReg, offset] = getOperand(I->getOperand(0));
         assert(starts_with(DestReg, "arg") || starts_with(DestReg, "r"));
@@ -316,6 +315,7 @@ public:
     /* To save memory */
     castDestReg = {};
     nameOffsetMap = {};
+    ptrResolver = {};
     FnBody.clear();
   }
 
@@ -352,7 +352,7 @@ public:
     auto [ValOp, _] = getOperand(SI.getValueOperand(), true);
     auto [PtrOp, StackOffset] = getOperand(SI.getPointerOperand(), false);
     string sz = getAccessSizeInStr(SI.getValueOperand()->getType());
-    
+
     if (StackOffset != -1) {
       if (starts_with(PtrOp, tempPrefix))
         emitAssembly("store", {sz, ValOp, "sp", std::to_string(StackOffset)});
@@ -434,11 +434,15 @@ public:
 
     auto [Op1, unused_1] = getOperand(GEPI.getOperand(0));
     auto [Op2, unused_2] = getOperand(GEPI.getOperand(1));
+    unsigned offset = stoi(Op2);
+
     string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
+
     if (starts_with(DestReg, tempPrefix)) {
       // 需要存儲 GEPI 名字 (以後需要解決), corresponding ptr name, corresponding offset
-      ptrResolver.emplace(DestReg, std::pair(Op1, byte));
-    } 
+      outs() << DestReg << " " << GEPI << "\n";
+      ptrResolver.emplace(DestReg, std::pair(Op1, byte*offset));
+    }
     else if (starts_with(DestReg, "r_")) {
       // emitAssembly(DestReg, "mul", {DestReg, std::to_string(bw)});
       assert(false && "還沒能力處理這個\n");
@@ -474,7 +478,7 @@ public:
         castDestReg.emplace(TI.getName().str(), Op1);
       }
     }
-      
+
   }
   // * Support for bitCast + spOffset
   void visitBitCastInst(BitCastInst &BCI) {
