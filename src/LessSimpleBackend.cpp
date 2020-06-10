@@ -16,6 +16,98 @@
 using namespace llvm;
 using namespace std;
 
+
+static bool nonOffset(Instruction *I){
+    bool nonOffsetFlag = false;
+    for(User *user : I->users()){
+        if(Instruction *userInst = dyn_cast<Instruction>(user)){
+            if(dyn_cast<CastInst>(userInst)){
+                nonOffsetFlag |= nonOffset(userInst);
+            }else if(
+                    (dyn_cast<StoreInst>(userInst) &&
+                    userInst->getOperand(1) == I) ||
+                    (dyn_cast<LoadInst>(userInst) &&
+                    userInst->getOperand(0) == I)
+                ){
+                continue;
+            }else{
+                nonOffsetFlag = true;
+            }
+        }
+    }
+    return nonOffsetFlag;
+}
+
+static bool _mayVisitAfter(
+    Instruction *visitee, 
+    BasicBlock *BB, 
+    set<BasicBlock*> &visitedBlockSet){
+    if(visitedBlockSet.count(BB)){
+        return false;
+    }
+    for(Instruction &I : BB->getInstList()){
+        if(&I == visitee){
+            return true;
+        }
+    }
+    visitedBlockSet.insert(BB);
+    for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
+        bool result = _mayVisitAfter(
+            visitee,
+            BB->getTerminator()->getSuccessor(i),
+            visitedBlockSet
+        );
+        if(result){
+            return true; 
+        }
+    }
+    return false;
+}
+static bool mayVisitAfter(Instruction *visitee, Instruction *afterThis){
+    bool afterThisInBasicBlock = false;
+    for(Instruction &I : *afterThis->getParent()){
+        if(&I == afterThis){
+            afterThisInBasicBlock = true;
+        }
+        if(afterThisInBasicBlock && visitee==&I){
+            return true;
+        }
+    }
+    set<BasicBlock*> visitedBlockSet;
+    if(visitee->getParent() == afterThis->getParent()){
+        visitedBlockSet.insert(visitee->getParent());
+    }
+    for(int i = 0; i < afterThis->getParent()->getTerminator()->getNumSuccessors(); i++){
+        bool result = _mayVisitAfter(
+            visitee,
+            afterThis->getParent()->getTerminator()->getSuccessor(i),
+            visitedBlockSet
+        );
+        if(result){
+            return true;
+        }
+    }
+    // outs()<<"visitee: "<<visitee->getName()<<"\n";
+    // outs()<<"afterThis: "<<afterThis->getName()<<"\n";
+    return false;
+}
+static bool usedAfter(Instruction *I, Instruction *I_current){
+    bool usedFlag = false;
+    for(auto *User : I->users()){
+        if(Instruction *UserI = dyn_cast<Instruction>(User)){
+            if(dyn_cast<CastInst>(UserI)){
+                usedFlag |= usedAfter(UserI, I_current);
+            }else if(UserI==I_current || mayVisitAfter(UserI, I_current)){
+                usedFlag = true;
+            }
+            if(usedFlag){
+                return true;
+            }
+        }
+    }
+    return usedFlag;
+}
+
 // Return sizeof(T) in bytes.
 unsigned getAccessSize(Type *T) {
   if (isa<PointerType>(T))
@@ -28,7 +120,7 @@ unsigned getAccessSize(Type *T) {
   assert(false && "Unsupported access size type!");
 }
 
-static unsigned int align(unsigned int num, int align=16){
+static unsigned int align(unsigned int num, int align=8){
     return ((num/align + !!(num%align))*align);
 }
 
@@ -80,23 +172,6 @@ class LessSimpleBackend::StackFrame{
     Function *F;
     LessSimpleBackend *Backend;
     int maxStackSize = 0;
-    bool usedAfter(Instruction *I, Instruction *I_current){
-        DominatorTree DT(*F);
-        bool usedFlag = false;
-        for(auto *User : I->users()){
-            if(Instruction *UserI = dyn_cast<Instruction>(User)){
-                if(dyn_cast<CastInst>(UserI)){
-                    usedFlag |= usedAfter(UserI, I_current);
-                }else if(UserI==I_current || !DT.dominates(UserI, I_current)){
-                    usedFlag = true;
-                }
-                if(usedFlag){
-                    return true;
-                }
-            }
-        }
-        return usedFlag;
-    }
     void mergeEmpty(){
         for(int i = 1; i < frame.size(); i++){
             auto content = frame[i];
@@ -118,8 +193,10 @@ class LessSimpleBackend::StackFrame{
                 continue;
             }
             if(!usedAfter(frame[i].first, I_current)){
+                // outs() << "I:" << *frame[i].first << "\n" 
+                //        << "I_current:" << *I_current << "\n";
                 frame[i].first = nullptr;
-            }            
+            }
         }
         mergeEmpty();
     }
@@ -237,17 +314,6 @@ public:
         assert(regPos>0 && regPos<=REG_SIZE);
         regs[regPos-1] = I;
     }
-    bool usedAfter(Instruction *I, Instruction *I_checked){
-        DominatorTree DT(*F);
-        for(auto *User : I->users()){
-            if(Instruction *UserI = dyn_cast<Instruction>(User)){
-                if(UserI==I_checked || !DT.dominates(UserI, I_checked)){
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
     void tryDumpRedundant(Instruction *I_current){
         for(int i = 0; i < regs.size(); i++){
             if(regs[i]==nullptr){
@@ -262,7 +328,7 @@ public:
         for(int i = 0; i < regs.size(); i++){
             bool canBeVictim = true;
             for(int j = 0; j < exceptPosList.size(); j++){
-                if(exceptPosList[j] == i){
+                if(exceptPosList[j]-1 == i){
                     canBeVictim = false;
                     break;
                 }
@@ -277,25 +343,26 @@ public:
         Instruction *InsertBefore, int regNum){
         int offset = frame->findOnStack(IOnStack);
         IRBuilder<> Builder(InsertBefore);
-        CallInst *temp_p = Builder.CreateCall(
-            Backend->getSpOffset(),
-            {ConstantInt::getSigned(IntegerType::getInt64Ty(IOnStack->getContext()), offset)},
-            Backend->getTempPrefix()+IOnStack->getName()
-        );
-        Value *loadOperand = temp_p;
-        if(!(IOnStack->getType()->isIntegerTy() &&
-            IOnStack->getType()->getIntegerBitWidth()==8
-            )){
-            loadOperand = Builder.CreateBitCast(
-                temp_p, IOnStack->getType()->getPointerTo(), 
-                temp_p->getName()+"_cast"
-            );
-        }
+        // CallInst *temp_p = Builder.CreateCall(
+        //     Backend->getSpOffset(),
+        //     {ConstantInt::getSigned(IntegerType::getInt64Ty(IOnStack->getContext()), offset)},
+        //     Backend->getTempPrefix()+"_LTR_"+IOnStack->getName()
+        // );
+        // Value *loadOperand = temp_p;
+        // if(!(IOnStack->getType()->isIntegerTy() &&
+        //     IOnStack->getType()->getIntegerBitWidth()==8
+        //     )){
+        //     loadOperand = Builder.CreateBitCast(
+        //         temp_p, IOnStack->getType()->getPointerTo(), 
+        //         temp_p->getName()+"_cast"
+        //     );
+        // }
+        Value *loadOperand = Backend->stackMap[IOnStack];
         Instruction *newInst = Builder.CreateLoad(
             loadOperand,
             genRegName(IOnStack, regNum)
         );
-        regs[regNum-1] = newInst;
+        regs[regNum-1] = IOnStack;
         return newInst;
     }
     void storeToFrame(Instruction *IOnReg, StackFrame *frame,
@@ -304,26 +371,32 @@ public:
             regNum = findOnRegs(IOnReg);
             assert(regNum>0);
         }
-        int offset = frame->putOnStack(IOnReg, InsertBefore);
+        //int offset = frame->putOnStack(IOnReg, InsertBefore);
         IRBuilder<> Builder(InsertBefore);
-        CallInst *temp_p = Builder.CreateCall(
-            Backend->getSpOffset(),
-            {ConstantInt::getSigned(IntegerType::getInt64Ty(IOnReg->getContext()), offset)},
-            Backend->getTempPrefix()+IOnReg->getName()
+        // CallInst *temp_p = Builder.CreateCall(
+        //     Backend->getSpOffset(),
+        //     {ConstantInt::getSigned(IntegerType::getInt64Ty(IOnReg->getContext()), offset)},
+        //     Backend->getTempPrefix()+"_STF_"+IOnReg->getName()
+        // );
+        // Value *loadOperand = temp_p;
+        // if(!(IOnReg->getType()->isIntegerTy() &&
+        //     IOnReg->getType()->getIntegerBitWidth()==8
+        //     )){
+        //     loadOperand = Builder.CreateBitCast(
+        //         temp_p, IOnReg->getType()->getPointerTo(), 
+        //         temp_p->getName()+"_cast"
+        //     );
+        // }
+        AllocaInst *loadOperand = Builder.CreateAlloca(
+            IOnReg->getType(),
+            nullptr,
+            "_ltf_"+IOnReg->getName()
         );
-        Value *loadOperand = temp_p;
-        if(!(IOnReg->getType()->isIntegerTy() &&
-            IOnReg->getType()->getIntegerBitWidth()==8
-            )){
-            loadOperand = Builder.CreateBitCast(
-                temp_p, IOnReg->getType()->getPointerTo(), 
-                temp_p->getName()+"_cast"
-            );
-        }
         Builder.CreateStore(
             IOnReg,
             loadOperand
         );
+        Backend->stackMap[IOnReg] = loadOperand;
         regs[regNum-1] = nullptr;
     }
     string genRegName(Instruction *I, int regNum){
@@ -436,8 +509,11 @@ void LessSimpleBackend::loadRelatedOperands(
 void LessSimpleBackend::loadOperands(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs, 
     vector<int> &operandOnRegs){
+        if(I->getParent()->getTerminator() == I){
+            return;
+        }
         vector<Instruction*> toMoveToRegs;
-        IRBuilder<> Builder(I);
+        // IRBuilder<> Builder(I);
         for(int i = 0; i < I->getNumOperands(); i++){
             Value* operand = I->getOperand(i);
             if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
@@ -453,11 +529,10 @@ void LessSimpleBackend::loadOperands(
                         operandOnRegs.push_back(regNum-1);
                         continue;
                     }
-                    int stackOffset = frame->findOnStack(relatedInst);
-                    if(stackOffset >= 0){
+                    if(stackMap.count(relatedInst)){
                         toMoveToRegs.push_back(relatedInst);
                         continue;
-                    }                    
+                    }
                 }
             }
         }
@@ -470,32 +545,79 @@ void LessSimpleBackend::loadOperands(
             }
             Instruction* newInst = regs->loadToReg(IOnStack, frame, I, victimRegNum);
             I->replaceUsesOfWith(IOnStack, newInst);
-            operandOnRegs.push_back(victimRegNum-1);
+            operandOnRegs.push_back(victimRegNum);
         }
+}
+
+static int isUsedByItsTerminator(Instruction *I){
+    Instruction *term = I->getParent()->getTerminator();
+    for(int i = 0; i < term->getNumOperands(); i++){
+        if(I == term->getOperand(i)){
+            int userNum = 0;
+            for(auto user : I->users()){
+                userNum++;
+            }
+            return userNum;
+        }
+    }
+    return 0;
 }
 
 bool LessSimpleBackend::putOnRegs(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
     vector<int> &operandOnRegs){
     if(AllocaInst *AI = dyn_cast<AllocaInst>(I)){
-        I = depAlloca(AI);
-        if(I->getName().startswith(tempPrefix)){
+        //I = depAlloca(AI);
+        if(!nonOffset(AI)){
+            //AI->setName(tempPrefix+AI->getName());
             return false;
         }
     }
     int victimRegNum = regs->tryPutOnRegs(I);
     bool dumpFlag = false;
     if(victimRegNum <= 0){
-        victimRegNum = regs->findVictimExcept(operandOnRegs);
-        evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
-        regs->storeToFrame(regs->getInst(victimRegNum), frame, I, victimRegNum);
-        dumpFlag = true;
+        if(int useNum = isUsedByItsTerminator(I)){
+            victimRegNum = BR_REG;
+            if(useNum > 1){
+                IRBuilder<> Builder(I->getNextNode());
+                Instruction *allocInst = Builder.CreateAlloca(
+                    I->getType(),
+                    nullptr,
+                    I->getName()+"_pos"
+                );
+                Instruction *storeInst = Builder.CreateStore(
+                    I,
+                    allocInst
+                );
+                putOnRegsSet.insert(allocInst);
+                for(User *user : I->users()){
+                    Instruction *userI = dyn_cast<Instruction>(userI);
+                    if(I->getParent()->getTerminator() != userI){
+                        IRBuilder<> userInstBuilder(userI);
+                        Instruction *loadInst = userInstBuilder.CreateLoad(
+                            allocInst,
+                            I->getName()
+                        );
+                        userI->replaceUsesOfWith(I, loadInst);
+                        putOnRegsSet.insert(loadInst);
+                        resumeRegsSet.insert(loadInst);
+                    }
+                }
+            }
+        }else{
+            victimRegNum = regs->findVictimExcept(operandOnRegs);
+            evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
+            regs->storeToFrame(regs->getInst(victimRegNum), frame, I, victimRegNum);
+            dumpFlag = true;            
+        }
     }
     I->setName(regs->genRegName(I, victimRegNum));
-    regs->setInst(I, victimRegNum);
-    if(AllocaInst *AI = dyn_cast<AllocaInst>(I)){
-        depAlloca(AI);
+    if(victimRegNum != BR_REG){
+        regs->setInst(I, victimRegNum);
     }
+    // if(AllocaInst *AI = dyn_cast<AllocaInst>(I)){
+    //     depAlloca(AI);
+    // }
     return dumpFlag;
 }
 
@@ -510,88 +632,90 @@ void LessSimpleBackend::resumeRegs(
         Instruction *IOnStack = evicRegs[i].first;
         int regPos = evicRegs[i].second;
         regs->loadToReg(IOnStack, frame, I_next, regPos);
-        DominatorTree DT(*I->getFunction());
-        for(BasicBlock &BB : *I->getFunction()){
-            for(Instruction &Inst : BB){
-                if(DT.dominates(regs->getInst(regPos), &Inst)){
-                    Inst.replaceUsesOfWith(IOnStack, regs->getInst(regPos));
-                }
-            }
-        }
-        frame->replaceWith(IOnStack, regs->getInst(regPos));
+        // DominatorTree DT(*I->getFunction());
+        // for(BasicBlock &BB : *I->getFunction()){
+        //     for(Instruction &Inst : BB){
+        //         if(DT.dominates(regs->getInst(regPos), &Inst)){
+        //             Inst.replaceUsesOfWith(IOnStack, regs->getInst(regPos));
+        //         }
+        //     }
+        // }
+        // frame->replaceWith(IOnStack, regs->getInst(regPos));
     }
 }
 
-static bool nonOffset(Instruction *I){
-    bool nonOffsetFlag = false;
-    for(User *user : I->users()){
-        if(Instruction *userInst = dyn_cast<Instruction>(user)){
-            if(dyn_cast<CastInst>(userInst)){
-                nonOffsetFlag |= nonOffset(userInst);
-            }else if(
-                    (dyn_cast<StoreInst>(userInst) &&
-                    userInst->getOperand(1) == I) ||
-                    (dyn_cast<LoadInst>(userInst) &&
-                    userInst->getOperand(0) == I)
-                ){
-                continue;
-            }else{
-                nonOffsetFlag = true;
-            }
-        }
+void LessSimpleBackend::depAlloca(AllocaInst *AI){
+    if(!nonOffset(AI)){
+        AI->setName(tempPrefix+AI->getName());
     }
-    return nonOffsetFlag;
-}
-
-Instruction *LessSimpleBackend::depAlloca(AllocaInst *AI){
-    unsigned int allocaSize = getAccessSize(AI->getType());
-    int offset = frame->putOnStack(AI, true, allocaSize, AI->getAlignment());
+    int offset = frame->putOnStack(AI);
     IRBuilder<> Builder(AI);
     Instruction *posOnStack = Builder.CreateCall(
         spOffset,
         {ConstantInt::getSigned(IntegerType::getInt64Ty(AI->getContext()), offset)},
         AI->getName()
     );
-    if(!nonOffset(AI)){
-        posOnStack->setName(tempPrefix+posOnStack->getName());
+    if(posOnStack->getType()!=AI->getType()){
+        posOnStack = dyn_cast<Instruction>(Builder.CreateBitCast(
+            posOnStack,
+            AI->getType(),
+            AI->getName()+"_cast"
+        ));
     }
-    Value *posOnStack_castV = Builder.CreateBitCast(
-        posOnStack,
-        AI->getType(),
-        posOnStack->getName()+"_cast"
-    );
-    CastInst *posOnStack_cast = dyn_cast<CastInst>(posOnStack_castV);
-    AI->replaceAllUsesWith(posOnStack_cast);
-    depCast(posOnStack_cast);
+    AI->replaceAllUsesWith(posOnStack);
     frame->replaceWith(AI, posOnStack);
     removeInst(AI);
-    return posOnStack;
+}
+
+void LessSimpleBackend::depAlloca(Function &F){
+    vector<AllocaInst*> allocaToDepList;
+    for(BasicBlock &B : F){
+        for(Instruction &I : B){
+            if(AllocaInst *AI = dyn_cast<AllocaInst>(&I)){
+                allocaToDepList.push_back(AI);
+            }
+        }
+    }
+    for(AllocaInst *allocaToDep : allocaToDepList){
+        depAlloca(allocaToDep);
+    }
 }
 
 void LessSimpleBackend::regAlloc(Function& F){
     vector<Instruction*> instToAllocList;
     for(BasicBlock &BB : F){
         for(Instruction &I : BB){
-            instToAllocList.push_back(&I);
+            //instToAllocList.push_back(&I);
+            Instruction *instToAlloc = &I;
+            vector<pair<Instruction*, int>> evicRegs;
+            vector<int> operandOnRegs;
+            bool dumpFlag = false;
+            if(instToAlloc->getName().startswith(tempPrefix)){
+                continue;
+            }
+            if(loadOperandsSet.count(instToAlloc)){
+                loadOperands(instToAlloc, evicRegs, operandOnRegs);
+            }
+            if(putOnRegsSet.count(instToAlloc)){
+                dumpFlag = putOnRegs(instToAlloc, evicRegs, operandOnRegs);
+            }
+            if(resumeRegsSet.count(instToAlloc)){
+                resumeRegs(instToAlloc, evicRegs, dumpFlag);
+            }
         }
     }
-    for(Instruction *instToAlloc : instToAllocList){
-        vector<pair<Instruction*, int>> evicRegs;
-        vector<int> operandOnRegs;
-        bool dumpFlag = false;
-        if(instToAlloc->getName().startswith(tempPrefix)){
-            continue;
-        }
-        if(loadOperandsSet.count(instToAlloc)){
-            loadOperands(instToAlloc, evicRegs, operandOnRegs);
-        }
-        if(putOnRegsSet.count(instToAlloc)){
-            dumpFlag = putOnRegs(instToAlloc, evicRegs, operandOnRegs);
-        }
-        if(resumeRegsSet.count(instToAlloc)){
-            //resumeRegs(instToAlloc, evicRegs, dumpFlag);
-        }        
-    }
+    // vector<Instruction*> instToRemove;
+    // for(BasicBlock &BB : F){
+    //     for(Instruction &I : BB){
+    //         Instruction *I_p = &I;
+    //         if(dyn_cast<AllocaInst>(I_p)){
+    //             instToRemove.push_back(I_p);
+    //         }
+    //     }
+    // }
+    // for(Instruction *instToRemove : instToRemove){
+    //     //removeInst(instToRemove);
+    // }
 }
 
 void LessSimpleBackend::depCast(CastInst *CI){
@@ -643,35 +767,82 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
     int phiSize = getAccessSize(phiType);
     BasicBlock &entryBlock = PI->getFunction()->getEntryBlock();
     IRBuilder<> entryBuilder(entryBlock.getFirstNonPHI());
-    AllocaInst *phiPosOnStack = entryBuilder.CreateAlloca(
+    AllocaInst *phiTempValOnStack = entryBuilder.CreateAlloca(
         phiType,
         nullptr,
-        "pos_"+PI->getName()
+        "pos_tmep_"+PI->getName()
     );
-    putOnRegsSet.insert(phiPosOnStack);
+    putOnRegsSet.insert(phiTempValOnStack);
+    AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
+        phiType,
+        nullptr,
+        "pos_real_"+PI->getName()
+    );
     for(int i = 0; i < PI->getNumIncomingValues(); i++){
         Value* inValue = PI->getIncomingValue(i);
         BasicBlock* inBlock = PI->getIncomingBlock(i);
         IRBuilder<> blockBuilder(inBlock->getTerminator());
         Instruction *storePI = blockBuilder.CreateStore(
             inValue,
-            phiPosOnStack
+            phiTempValOnStack
         );
         loadOperandsSet.insert(storePI);
         resumeRegsSet.insert(storePI);
     }
     IRBuilder<> PIBuilder(PI);
-    Instruction* newPI = PIBuilder.CreateLoad(
-        phiPosOnStack,
-        PI->getName()
+    Instruction* updateCarrierDep = PIBuilder.CreateLoad(
+        phiTempValOnStack,
+        PI->getName()+"_carrier"
     );
-    //replaceUseOfWithIn(PI, newPI, PI->getParent());
-    PI->replaceAllUsesWith(newPI);
+    loadOperandsSet.insert(updateCarrierDep);
+    putOnRegsSet.insert(updateCarrierDep);
+    resumeRegsSet.insert(updateCarrierDep);
+    Instruction* updateCarrierArr = PIBuilder.CreateStore(
+        updateCarrierDep,
+        phiRealValOnStack
+    );
+    // PI->replaceAllUsesWith(newPI);
+    // removeInst(PI);
+    loadOperandsSet.insert(updateCarrierArr);
+    // putOnRegsSet.insert(updateCarrierArr);
+    resumeRegsSet.insert(updateCarrierArr);
+    return phiRealValOnStack;
+}
+
+void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
+    Function *F = PI->getParent()->getParent();
+    vector<pair<Instruction *, int>> newLoadList;
+    vector<pair<Instruction *, int>> undefList;
+    for(BasicBlock &BB : F->getBasicBlockList()){
+        for(Instruction &I : BB){
+            for(int i = 0; i < I.getNumOperands(); i++){
+                Value *operandV = I.getOperand(i);
+                PHINode *operandPI = dyn_cast<PHINode>(operandV);
+                if(operandPI == PI){
+                    if(dyn_cast<PHINode>(&I)){
+                        undefList.push_back(pair(&I, i));
+                    }else{
+                        newLoadList.push_back(pair(&I, i));
+                    }
+                }
+            }
+        }
+    }
+    for(auto iter : newLoadList){
+        IRBuilder<> Builder(iter.first);
+        LoadInst *loadRealVal = Builder.CreateLoad(
+            realValPos,
+            PI->getName()+"_val"
+        );
+        iter.first->setOperand(iter.second, loadRealVal);
+        loadOperandsSet.insert(loadRealVal);
+        putOnRegsSet.insert(loadRealVal);
+        resumeRegsSet.insert(loadRealVal);
+    }
+    for(auto iter : undefList){
+        iter.first->setOperand(iter.second, UndefValue::get(PI->getType()));
+    }
     removeInst(PI);
-    loadOperandsSet.insert(newPI);
-    putOnRegsSet.insert(newPI);
-    resumeRegsSet.insert(newPI);
-    return phiPosOnStack;
 }
 
 void LessSimpleBackend::depPhi(Function &F){
@@ -688,36 +859,24 @@ void LessSimpleBackend::depPhi(Function &F){
     for(PHINode *PI : phiList){
         phiMap[PI] = depPhi(PI);
     }
-    // for(PHINode *PI : phiList){
-    //     set<BasicBlock*> useBlockSet;
-    //     for(User *user : PI->users()){
-    //         if(Instruction *userInst = dyn_cast<Instruction>(user)){
-    //             if(!dyn_cast<PHINode>(userInst)){
-    //                 useBlockSet.insert(userInst->getParent());
-    //             }
-    //         }
-    //     }
-    //     phiUseBlockMap[PI] = useBlockSet;
-    // }
-    // for(auto iter : phiUseBlockMap){
+    // outs()<<F<<"\n";
+    for(auto iter : phiMap){
+        PHINode *PI = iter.first;
+        Instruction *realValPos = iter.second;
+        __depPhi(PI, realValPos);
+    }
+    // outs()<<F;
+    // for(auto iter : phiMap){
     //     PHINode *PI = iter.first;
-    //     set<BasicBlock*> useBlockSet = iter.second;
-    //     for(BasicBlock *useBlock : useBlockSet){
-    //         IRBuilder<> Builder(useBlock->getFirstNonPHI());
-    //         Instruction *newLoadInst = Builder.CreateLoad(
-    //             phiMap[PI],
-    //             PI->getName()
-    //         );
-    //         replaceUseOfWithIn(PI, newLoadInst, useBlock);
-    //         loadOperandsSet.insert(newLoadInst);
-    //         putOnRegsSet.insert(newLoadInst);
-    //         resumeRegsSet.insert(newLoadInst);
+    //     Instruction *realValPos = iter.second;
+    //     for(User *user : PI->users()){
+    //         Instruction *userInst = dyn_cast<Instruction>(user);
+    //         outs()<<*userInst<<"\n";
     //     }
+    // }
+    // for(PHINode *PI : phiList){
     //     PI->replaceAllUsesWith(UndefValue::get(PI->getType()));
     //     removeInst(PI);
-    // }
-    // for(PHINode *PI : phiList){
-        
     // }
 }
 
@@ -938,7 +1097,9 @@ void LessSimpleBackend::depromoteReg(Function &F){
     depCast(F);
     depPhi(F);
     depGEP(F);
+    outs()<<F;
     regAlloc(F);
+    depAlloca(F);
     placeSpSub(F);
     delete(regs);
     delete(frame);

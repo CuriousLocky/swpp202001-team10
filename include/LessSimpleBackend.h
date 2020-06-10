@@ -9,7 +9,8 @@
 #include <map>
 #include <set>
 
-#define REG_SIZE 4
+#define REG_SIZE 15
+#define BR_REG (REG_SIZE+1)
 
 #define POS_STACK 1
 #define POS_UNKNOWN 0
@@ -21,6 +22,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   std::string tempPrefix;
   bool printDepromotedModule;
   std::map<llvm::Instruction*, llvm::Value*> stackMap;
+  //std::map<llvm::Instruction*, llvm::Instruction*> stackMapRev;
   llvm::Function *spOffset;
   llvm::Function *spSub;
   llvm::Function *rstH;
@@ -56,10 +58,12 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     llvm::Instruction *I, 
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
     bool dumpFlag);
-  llvm::Instruction *depAlloca(llvm::AllocaInst *AI);
+  void depAlloca(llvm::AllocaInst *AI);
+  void depAlloca(llvm::Function &F);
   void depCast(llvm::CastInst *BCI);
   void depCast(llvm::Function &F);
   llvm::Instruction *depPhi(llvm::PHINode *PI);
+  void __depPhi(llvm::PHINode *PI, llvm::Instruction *realValPos);
   void depPhi(llvm::Function &F);
   void depGEP(llvm::GetElementPtrInst *GEPI);
   void depGEP(llvm::Function &F);
