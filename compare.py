@@ -59,8 +59,8 @@ with open('improve-report.log', 'w') as f:
             for k in data[t][i]:
                 temp = perc.get(k, 0.0)
                 perc[k] = temp + data[t][i][k]
-                f.write(f'{k} improve %: {data[t][i][k]:.5f}%\n')
+                f.write(f'{k} improve %: {data[t][i][k]:.3%}\n')
         f.write('------\n')
         for k in perc:
-            f.write(f'Average {k} improve %: {perc[k]/total:.5f}%\n')
+            f.write(f'Average {k} improve %: {perc[k]/total:.3%}\n')
         f.write('======\n')
