@@ -164,7 +164,7 @@ private:
   unordered_map<std::string, int> nameOffsetMap;
   unordered_map<std::string, std::pair<std::string, unsigned int>> ptrResolver;
   set<llvm::Value*> sextResolver;
-  set<llvm::Value*> GEPResolver;
+  unordered_map<llvm::Value*, std::pair<std::string, unsigned int>> GEPResolver;
   map<llvm::Value*, std::vector<std::string>> postOpResolver;
 
   // ----- Emit functions -----
@@ -281,87 +281,8 @@ private:
       }
       // TODO: support GEP
       else if (GEPResolver.count(I)) {
-        auto GEPI = dyn_cast<GetElementPtrInst>(I);
-        Type *PtrTy = GEPI->getPointerOperandType();
-
-        vector<unsigned> alignment;
-
-        if(PtrTy->getPointerElementType()->isArrayTy()) {
-          // 如果指向 array
-          ArrayType *AT = dyn_cast<ArrayType>(PtrTy->getPointerElementType());
-          getIndices(alignment, AT);
-        }
-        else if (PtrTy->getPointerElementType()->isIntegerTy()){
-          auto tmp = PtrTy->getPointerElementType()->getIntegerBitWidth();
-          alignment.emplace_back(tmp == 1 ? tmp : tmp / 8);
-        }
-        else {
-          raiseError("Unsupported pointer type! Not array or integer", GEPI);
-        }
-
-
-        string DestReg = getRegisterNameFromInstruction(GEPI, tempPrefix);
-
-        vector<std::string> offsets;
-
-        if (starts_with(DestReg, tempPrefix)) {
-          // 如果 GEP 的 destreg 是 temp 開頭的，那麼一定只有常數，
-          // 或只有 GEP sourcePtr 是 register
-
-          // 遍歷所有的 indices, 存儲到 offsets 中
-          for (unsigned i = 1; i <= GEPI->getNumIndices(); i++) {
-            auto [Op, unused] = getOperand(GEPI->getOperand(i));
-            offsets.emplace_back(Op);
-          }
-
-          unsigned offset = 0;
-
-          auto [Ptr, unused] = getOperand(GEPI->getPointerOperand());
-
-          bool isRegister = (starts_with(Ptr, "r") ||
-                             starts_with(Ptr, tempPrefix) ||
-                             starts_with(Ptr, "arg"));
-
-          for (unsigned i = 1; i < offsets.size(); i++) {
-            offset += stoi(offsets[i]);
-            offset *= alignment[i];
-          }
-          offset *= alignment.back();
-          return { Ptr, offset };
-        }
-        else if (starts_with(DestReg, "r_")) { // with registers in indices
-          int firstRegIdx = -1;
-
-          for (unsigned i = 0; i < GEPI->getNumOperands(); i++) {
-            auto [Op, unused] = getOperand(GEPI->getOperand(i));
-            offsets.emplace_back(Op);
-            if (starts_with(Op, "r")) { firstRegIdx = i; }
-          }
-          unsigned offset = 0;
-
-          if (firstRegIdx )
-
-          for (unsigned i = 1; i < firstRegIdx; i++) {
-            offset += stoi(offsets[i]);
-            offset *= alignment[i-1];
-          }
-          emitAssembly(DestReg, "add",
-                      {std::to_string(offset), offsets[firstRegIdx]});
-          emitAssembly(DestReg, "mul",
-                      {DestReg, std::to_string(alignment[firstRegIdx])});
-          for (unsigned i = firstRegIdx+1; i < offsets.size(); i++) {
-            emitAssembly(DestReg, "add",
-                        {DestReg, offsets[i]});
-            emitAssembly(DestReg, "mul",
-                        {DestReg, std::to_string(alignment[i])});
-          }
-          emitAssembly(DestReg, "mul", {DestReg, std::to_string(alignment.back())});
-          return { DestReg, 0 };
-        }
-        else {
-          raiseError("Invalid dest register", GEPI);
-        }
-        raiseError("GEP not handled!", GEPI);
+        auto tmp = GEPResolver.at(I);
+        return { tmp.first, tmp.second };
       }
       else if (starts_with(I->getName().str(), tempPrefix)) {
       /* If this is an instruction start with temp and not resolved in
@@ -385,10 +306,12 @@ private:
     }
   }
 
-void getIndices(vector<unsigned> indices, ArrayType *arr) {
+void getSize(vector<unsigned> indices, ArrayType *arr) {
+  // Recursively find the size of each dimension for the input array, with the
+  // element stored in the ndnarray append at the end
   indices.emplace_back(arr->getArrayNumElements());
   if (arr->getArrayElementType()->isArrayTy()) {
-    getIndices(indices, dyn_cast<ArrayType>(arr->getArrayElementType()));
+    getSize(indices, dyn_cast<ArrayType>(arr->getArrayElementType()));
   } else {
     assert(arr->getArrayElementType()->isIntegerTy());
     auto tmp = arr->getArrayElementType()->getIntegerBitWidth();
@@ -516,10 +439,109 @@ public:
   /*
   <result> = getelementptr <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
   <result> = getelementptr inbounds <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
-  <result> = getelementptr <ty>, <ptr vector> <ptrval>, [inrange] <vector index type> <idx>
   */
-    // Handle this in getOperand
-    GEPResolver.emplace(&GEPI);
+    // Get Pointer Type
+
+    Type *PtrTy = GEPI.getPointerOperandType();
+
+    auto [Ptr, _] = getOperand(GEPI.getOperand(0)); // Pointer Operand
+
+    string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
+
+    vector<unsigned> size;
+    unsigned elementByte;
+
+    if (PtrTy->getPointerElementType()->isArrayTy()) {
+      getSize(size, dyn_cast<ArrayType>(PtrTy->getPointerElementType()));
+      elementByte = size.back();
+    } else if (PtrTy->getPointerElementType()->isIntegerTy()) {
+      size = {};
+      auto tmp = PtrTy->getPointerElementType()->getIntegerBitWidth();
+      elementByte = tmp == 1 ? tmp : tmp / 8;
+    } else {
+      raiseError("Unsuported pointer type", &GEPI);
+    }
+
+    if (size.empty()) { // IntegerType, normal 1d ptr
+      auto [of, _] = getOperand(GEPI.getOperand(1));
+      if (starts_with(DestReg, tempPrefix)) { // All constants
+        GEPResolver.emplace(&GEPI,
+                            std::pair<std::string, unsigned>{Ptr, stoi(of)});
+      }
+      else if (starts_with(DestReg, "r")) { // Register
+        emitAssembly(DestReg, "add", {Ptr, of, "64"});
+        GEPResolver.emplace(&GEPI,
+                            std::pair<std::string, unsigned>{DestReg, -1});
+      }
+      else {
+        raiseError("Invalid destination register", &GEPI);
+      }
+    }
+    else { // ArrayType, ndarray
+      if (starts_with(DestReg, tempPrefix)) { // All constants
+        unsigned offset = 0;
+        vector<unsigned> indices;
+
+        for (unsigned i = 1; i < GEPI.getNumOperands(); i++) {
+          auto [Of, _] = getOperand(GEPI.getOperand(i));
+          indices.emplace_back(stoi(Of));
+        }
+        assert(indices.size() <= size.size());
+
+        for (unsigned i = 0; i < indices.size(); i++) {
+          offset += indices[i];
+          offset *= size[i];
+        }
+
+        for (unsigned j = indices.size(); j < size.size(); j++) {
+          offset *= size[j];
+        }
+
+        GEPResolver.emplace(&GEPI,
+                            std::pair<std::string, unsigned>{Ptr, offset});
+      }
+      else if (starts_with(DestReg, "r")) { // Contains registers in indices
+
+        vector<string> indices;
+
+        unsigned firstRegIdx = 0;
+
+        for (unsigned i = 1; i < GEPI.getNumOperands(); i++) {
+          auto [Of, _] = getOperand(GEPI.getOperand(i));
+          indices.emplace_back(Of);
+          if(starts_with(Of, "r") || starts_with(Of, "arg")) {
+            firstRegIdx = i-1;
+          }
+        }
+        assert(indices.size() <= size.size());
+
+        unsigned ini = 0;
+
+        for (unsigned i = 0; i < firstRegIdx; i++) {
+          ini += stoi(indices[i]);
+          ini *= size[i];
+        }
+        emitAssembly(DestReg, "add",
+                    { std::to_string(ini), indices[firstRegIdx] ,"64" });
+        emitAssembly(DestReg, "mul",
+                    { DestReg, std::to_string(size[firstRegIdx]), "64"});
+        for (unsigned j = firstRegIdx+1; j < indices.size(); j++) {
+          emitAssembly(DestReg, "add",
+                    { DestReg, indices[j] ,"64" });
+          emitAssembly(DestReg, "mul",
+                    { DestReg, std::to_string(size[j]), "64"});
+        }
+        for (unsigned k = indices.size(); k < size.size(); k++) {
+          emitAssembly(DestReg, "mul",
+                    { DestReg, std::to_string(size[k]), "64"});
+        }
+        GEPResolver.emplace(&GEPI,
+                            std::pair<std::string, unsigned>{DestReg, -1});
+      }
+      else {
+        raiseError("Invalid destination register!", &GEPI);
+      }
+    }
   }
 
   // ---- Casts ----
