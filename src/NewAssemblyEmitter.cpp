@@ -680,10 +680,10 @@ public:
 
   // ---- Terminators ----
   void visitReturnInst(ReturnInst &RI) {
-    // if (RI.getReturnValue()->getName().str() == "void") {
-    //   emitAssembly("ret", {});
-    //   return;
-    // }
+    if (RI.getReturnValue() == nullptr) {
+      emitAssembly("ret", {});
+      return;
+    }
     // raiseErrorIf(RI.getReturnValue() == nullptr, "ret should have value", &RI);
     emitAssembly("ret", { getOperand(RI.getReturnValue()).first });
   }

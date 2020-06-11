@@ -51,8 +51,8 @@ static int nonOffset(Instruction *I){
 }
 
 static bool _mayVisitAfter(
-    Instruction *visitee, 
-    BasicBlock *BB, 
+    Instruction *visitee,
+    BasicBlock *BB,
     set<BasicBlock*> &visitedBlockSet){
     if(visitedBlockSet.count(BB)){
         return false;
@@ -70,7 +70,7 @@ static bool _mayVisitAfter(
             visitedBlockSet
         );
         if(result){
-            return true; 
+            return true;
         }
     }
     return false;
@@ -134,7 +134,7 @@ static unsigned int align(unsigned int num, int align=8){
     return ((num/align + !!(num%align))*align);
 }
 
-// A simple namer. :) 
+// A simple namer. :)
 // Borrowed from SimpleBackend
 class InstNamer : public InstVisitor<InstNamer> {
 public:
@@ -152,7 +152,7 @@ public:
 
       for (Instruction &I : BB){
         if (!I.hasName() && !I.getType()->isVoidTy()){
-          I.setName("tmp");                 
+          I.setName("tmp");
         }
       }
     }
@@ -185,7 +185,7 @@ class LessSimpleBackend::StackFrame{
     void mergeEmpty(){
         for(int i = 1; i < frame.size(); i++){
             auto content = frame[i];
-            if(content.first == nullptr && 
+            if(content.first == nullptr &&
                 frame[i-1].first == nullptr){
                 frame[i] = pair(nullptr, content.second+frame[i-1].second);
                 frame[i-1] = pair(nullptr, 0);
@@ -347,7 +347,7 @@ public:
         }
         return -1;
     }
-    Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame, 
+    Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame,
         Instruction *InsertBefore, int regNum){
         int offset = frame->findOnStack(IOnStack);
         IRBuilder<> Builder(InsertBefore);
@@ -435,7 +435,7 @@ static string getUniqueFnName(string nameBase, Module &M){
         }
     }
     return nameBase;
-} 
+}
 
 static string getUniquePrefix(string nameBase, Module &M){
     for(Function &F : M){
@@ -489,7 +489,7 @@ void LessSimpleBackend::loadRelatedOperands(
 }
 
 void LessSimpleBackend::loadOperands(
-    Instruction *I, vector<pair<Instruction*, int>> &evicRegs, 
+    Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
     vector<int> &operandOnRegs){
         if(I->getParent()->getTerminator() == I){
             return;
@@ -586,7 +586,7 @@ bool LessSimpleBackend::putOnRegs(
             victimRegNum = regs->findVictimExcept(operandOnRegs);
             evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
             regs->storeToFrame(regs->getInst(victimRegNum), frame, I, victimRegNum);
-            dumpFlag = true;            
+            dumpFlag = true;
         }
     }
     I->setName(regs->genRegName(I, victimRegNum));
@@ -1112,7 +1112,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
 
     buildGVMap();
     depGV();
-    
+
     for(Function &F : M.getFunctionList()){
         if(!F.isDeclaration()){
             depromoteReg(F);
@@ -1122,7 +1122,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     outs() << M;
 
     // Now, let's emit assembly!
-    vector<std::string> dummyFunctionName = { 
+    vector<std::string> dummyFunctionName = {
         rstHName, rstSName, spOffsetName, spSubName, tempPrefix };
     error_code EC;
     raw_ostream *os =
@@ -1137,6 +1137,6 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     Emitter.run(&M);
 
     if (os != &outs()) delete os;
-    
+
     return PreservedAnalyses::all();
 }
