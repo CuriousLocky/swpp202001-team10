@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
   FunctionPassManager FPM;
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
   FPM.addPass(ArithmeticOptimization());
-  //FPM.addPass(GVN());
+  FPM.addPass(GVN());
   FPM.addPass(DCEPass());
   FPM.addPass(Alloca2reg());
   // CGSCC-level pass
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
   MPM.addPass(DeadArgumentEliminationPass());
   MPM.addPass(GlobalOptPass());
   MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
-  
+
   MPM.run(*M, MAM);
 
   return 0;

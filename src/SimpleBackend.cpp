@@ -683,9 +683,9 @@ static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Func
         builder.CreateCall(rstS, {});
       }else if(nowVisit==HEAP){
         builder.CreateCall(rstH, {});
-      }      
+      }
     }
-    lastVisit = nowVisit;       
+    lastVisit = nowVisit;
   }
   for(int i = 0; i < B.getTerminator()->getNumSuccessors(); i++){
     insertReset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS, BBMap);

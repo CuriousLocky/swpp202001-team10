@@ -5,7 +5,7 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/PromoteMemToReg.h" 
+#include "llvm/Transforms/Utils/PromoteMemToReg.h"
 using namespace llvm;
 using namespace std;
 
@@ -26,4 +26,3 @@ using namespace std;
 	  PromoteMemToReg(Allocas, DT, nullptr);
     return PreservedAnalyses::all();
   }
-
