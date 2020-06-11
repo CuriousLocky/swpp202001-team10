@@ -39,8 +39,8 @@ static int nonOffset(Instruction *I){
             opArgNum++;
         }
     }
-    if( (opArgNum==0 && opRegNum<=1) ||
-        (opArgNum>0 && opRegNum!=1)){
+    if( (opArgNum==0 && opRegNum>1) ||
+        (opArgNum>0 && opRegNum==1)){
         return 1;
     }
     for(User *user : I->users()){
