@@ -297,7 +297,7 @@ private:
     }
   }
 
-void getSize(vector<unsigned> indices, ArrayType *arr) {
+void getSize(vector<unsigned> &indices, ArrayType *arr) {
   // Recursively find the size of each dimension for the input array, with the
   // element stored in the ndnarray append at the end
   indices.emplace_back(arr->getArrayNumElements());
