@@ -551,7 +551,7 @@ public:
 
   void visitSExtInst(SExtInst &SI) {
     // Handle this in getOperand
-    string DestReg = getRegisterNameFromInstruction(SI, tempPrefix);
+    string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
     raiseErrorIf(starts_with(DestReg, tempPrefix),
       "Unresolved register name: start with tempPrefix", &SI);
     raiseErrorIf(((!SI.getSrcTy()->isIntegerTy())||
