@@ -449,7 +449,25 @@ public:
       size = {};
       auto tmp = PtrTy->getPointerElementType()->getIntegerBitWidth();
       elementByte = tmp == 1 ? tmp : tmp / 8;
-    } else {
+    } else if (PtrTy->getPointerElementType()->isPointerTy()) {
+      raiseErrorIf(GEPI.getNumIndices() != 1, "Too many indices", &GEPI);
+      auto [Of, unused_2] = getOperand(GEPI.getOperand(1));
+      string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
+      if (starts_with(DestReg, tempPrefix)) {
+        GEPResolver.emplace(&GEPI,
+         std::pair<std::string, unsigned>{Ptr, stoi(Of)*8});
+      }
+      else if (starts_with(DestReg, "r")) { // Register
+        emitAssembly(DestReg, "mul", {Of, "8", "64"});
+        emitAssembly(DestReg, "add", {Ptr, DestReg, "64"});
+        GEPResolver.emplace(&GEPI,
+          std::pair<std::string, unsigned>{DestReg, -1});
+      }
+      else {
+        raiseError("Invalid destination register", &GEPI);
+      }
+    }
+    else {
       raiseError("Unsuported pointer type", &GEPI);
     }
 
