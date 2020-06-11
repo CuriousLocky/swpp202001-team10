@@ -1,7 +1,6 @@
 #include "LessSimpleBackend.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/InstVisitor.h"
-
 #include <regex>
 #include <set>
 #include <sstream>
@@ -165,6 +164,8 @@ private:
   unordered_map<std::string, int> nameOffsetMap;
   unordered_map<std::string, std::pair<std::string, unsigned int>> ptrResolver;
   set<llvm::Value*> sextResolver;
+  set<llvm::Value*> GEPResolver;
+  map<llvm::Value*, std::vector<std::string>> postOpResolver;
 
   // ----- Emit functions -----
   void _emitAssemblyBody(const string &Cmd, const vector<string> &Ops,
@@ -188,6 +189,10 @@ private:
     FnBody.push_back(ss.str());
   }
 
+  void emitAssembly(const string &Cmd) {
+    FnBody.push_back(Cmd);
+  }
+
   void emitCopy(const string &DestReg, const string &val) {
     if (DestReg != val)
       emitAssembly(DestReg, "mul", {val, "1", "64"});
@@ -197,6 +202,7 @@ private:
     FnBody.push_back(name + ":");
   }
 
+  // TODO: support SExt
   // If V is a register or constant, return its name.
   // If V is alloca, return its offset from stack.
   pair<string, int> getOperand(Value *V, bool shouldNotBeStackSlot = true) {
@@ -250,12 +256,6 @@ private:
         checkRegisterType(I);
         return { getRegisterNameFromInstruction(I, tempPrefix), -1 };
       }
-      //// allocas are eliminated
-      //// else if (auto *AI = dyn_cast<AllocaInst>(V)) {
-      ////   raiseErrorIf(shouldNotBeStackSlot, "alloca cannot come here", AI);
-      ////   raiseErrorIf(!AI->hasName(), "alloca does not have name!", AI);
-      ////   return { "" , CurrentStackFrame.getStackOffset(AI) };
-      //// }
       else if (nameOffsetMap.find(I->getName().str()) != nameOffsetMap.end()) {
         int offset = nameOffsetMap.at(I->getName().str());
         return { "sp", offset };
@@ -279,6 +279,90 @@ private:
         emitAssembly(regToSExt, "ashr", {regToSExt, sz, "64"});
         return { regToSExt, -2 };
       }
+      // TODO: support GEP
+      else if (GEPResolver.count(I)) {
+        auto GEPI = dyn_cast<GetElementPtrInst>(I);
+        Type *PtrTy = GEPI->getPointerOperandType();
+
+        vector<unsigned> alignment;
+
+        if(PtrTy->getPointerElementType()->isArrayTy()) {
+          // 如果指向 array
+          ArrayType *AT = dyn_cast<ArrayType>(PtrTy->getPointerElementType());
+          getIndices(alignment, AT);
+        }
+        else if (PtrTy->getPointerElementType()->isIntegerTy()){
+          auto tmp = PtrTy->getPointerElementType()->getIntegerBitWidth();
+          alignment.emplace_back(tmp == 1 ? tmp : tmp / 8);
+        }
+        else {
+          raiseError("Unsupported pointer type! Not array or integer", GEPI);
+        }
+
+
+        string DestReg = getRegisterNameFromInstruction(GEPI, tempPrefix);
+
+        vector<std::string> offsets;
+
+        if (starts_with(DestReg, tempPrefix)) {
+          // 如果 GEP 的 destreg 是 temp 開頭的，那麼一定只有常數，
+          // 或只有 GEP sourcePtr 是 register
+
+          // 遍歷所有的 indices, 存儲到 offsets 中
+          for (unsigned i = 1; i <= GEPI->getNumIndices(); i++) {
+            auto [Op, unused] = getOperand(GEPI->getOperand(i));
+            offsets.emplace_back(Op);
+          }
+
+          unsigned offset = 0;
+
+          auto [Ptr, unused] = getOperand(GEPI->getPointerOperand());
+
+          bool isRegister = (starts_with(Ptr, "r") ||
+                             starts_with(Ptr, tempPrefix) ||
+                             starts_with(Ptr, "arg"));
+
+          for (unsigned i = 1; i < offsets.size(); i++) {
+            offset += stoi(offsets[i]);
+            offset *= alignment[i];
+          }
+          offset *= alignment.back();
+          return { Ptr, offset };
+        }
+        else if (starts_with(DestReg, "r_")) { // with registers in indices
+          int firstRegIdx = -1;
+
+          for (unsigned i = 0; i < GEPI->getNumOperands(); i++) {
+            auto [Op, unused] = getOperand(GEPI->getOperand(i));
+            offsets.emplace_back(Op);
+            if (starts_with(Op, "r")) { firstRegIdx = i; }
+          }
+          unsigned offset = 0;
+
+          if (firstRegIdx )
+
+          for (unsigned i = 1; i < firstRegIdx; i++) {
+            offset += stoi(offsets[i]);
+            offset *= alignment[i-1];
+          }
+          emitAssembly(DestReg, "add",
+                      {std::to_string(offset), offsets[firstRegIdx]});
+          emitAssembly(DestReg, "mul",
+                      {DestReg, std::to_string(alignment[firstRegIdx])});
+          for (unsigned i = firstRegIdx+1; i < offsets.size(); i++) {
+            emitAssembly(DestReg, "add",
+                        {DestReg, offsets[i]});
+            emitAssembly(DestReg, "mul",
+                        {DestReg, std::to_string(alignment[i])});
+          }
+          emitAssembly(DestReg, "mul", {DestReg, std::to_string(alignment.back())});
+          return { DestReg, 0 };
+        }
+        else {
+          raiseError("Invalid dest register", GEPI);
+        }
+        raiseError("GEP not handled!", GEPI);
+      }
       else if (starts_with(I->getName().str(), tempPrefix)) {
       /* If this is an instruction start with temp and not resolved in
       nameOffsetMap or castDestReg, then  */
@@ -295,11 +379,22 @@ private:
         assert(false && "Unknown instruction type!");
       }
 
-    } else {
+    }
+    else {
       assert(false && "Unknown value type!");
     }
   }
 
+void getIndices(vector<unsigned> indices, ArrayType *arr) {
+  indices.emplace_back(arr->getArrayNumElements());
+  if (arr->getArrayElementType()->isArrayTy()) {
+    getIndices(indices, dyn_cast<ArrayType>(arr->getArrayElementType()));
+  } else {
+    assert(arr->getArrayElementType()->isIntegerTy());
+    auto tmp = arr->getArrayElementType()->getIntegerBitWidth();
+    indices.emplace_back(tmp == 1 ? tmp : tmp / 8);
+  }
+}
 
 public:
   AssemblyEmitterImpl(std::vector<std::string> dummyFunctionName):
@@ -312,10 +407,12 @@ public:
 
   void visitFunction(Function &F) {
     // CurrentStackFrame = StackFrame();
-    /* To save memory */
     castDestReg = {};
     nameOffsetMap = {};
     ptrResolver = {};
+    sextResolver = {};
+    GEPResolver = {};
+    postOpResolver = {};
     FnBody.clear();
   }
 
@@ -414,42 +511,18 @@ public:
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
     emitAssembly(DestReg, "select", {Op1, Op2, Op3});
   }
-  // TODO: support GEP
+
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
   /*
   <result> = getelementptr <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
   <result> = getelementptr inbounds <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
   <result> = getelementptr <ty>, <ptr vector> <ptrval>, [inrange] <vector index type> <idx>
   */
-    raiseErrorIf(GEPI.getNumIndices() != 1, "Too many indices", &GEPI);
-
-    Type *PtrTy = GEPI.getPointerOperandType();
-    raiseErrorIf(!PtrTy->getPointerElementType()->isIntegerTy(),
-                 "Unsupported pointer type", &GEPI);
-    // Suppress this error since we support more datatypes
-    // raiseErrorIf(PtrTy->getPointerElementType()->getIntegerBitWidth() != 8,
-    //              "Unsupported pointer type: not i8", &GEPI);
-
-    auto byte = PtrTy->getPointerElementType()->getIntegerBitWidth() / 8;
-
-    auto [Op1, unused_1] = getOperand(GEPI.getOperand(0));
-    auto [Op2, unused_2] = getOperand(GEPI.getOperand(1));
-    unsigned offset = stoi(Op2);
-
-    string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
-
-    if (starts_with(DestReg, tempPrefix)) {
-      // 需要存儲 GEPI 名字 (以後需要解決), corresponding ptr name, corresponding offset
-      outs() << DestReg << " " << GEPI << "\n";
-      ptrResolver.emplace(DestReg, std::pair(Op1, byte*offset));
-    }
-    else if (starts_with(DestReg, "r_")) {
-      // emitAssembly(DestReg, "mul", {DestReg, std::to_string(bw)});
-      assert(false && "還沒能力處理這個\n");
-    }
+    // Handle this in getOperand
+    GEPResolver.emplace(&GEPI);
   }
 
-  // Casts
+  // ---- Casts ----
   void visitZExtInst(ZExtInst &ZI) {
     // This test should pass.
     (void)getRegisterNameFromInstruction(&ZI, tempPrefix);
@@ -463,7 +536,7 @@ public:
   }
 
   void visitSExtInst(SExtInst &SI) {
-    // TODO: add support for sext inst
+    // Handle this in getOperand
     sextResolver.emplace(&SI);
   }
 
