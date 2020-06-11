@@ -1,4 +1,4 @@
-@variable = internal constant i32 45 
+@variable = internal constant i32 45
 define i32* @main(i32* %x) {
 ; CHECK: start main 1:
 ; CHECK: .entry:
@@ -6,4 +6,3 @@ define i32* @main(i32* %x) {
 ; CHECK: end main
     ret i32* %x
 }
-
