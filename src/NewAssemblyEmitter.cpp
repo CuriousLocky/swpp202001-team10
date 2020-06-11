@@ -527,6 +527,7 @@ public:
           emitAssembly(DestReg, "mul",
                     { DestReg, std::to_string(size[k]), "64"});
         }
+        emitAssembly(DestReg, "add", {DestReg, Ptr, "64"});
         GEPResolver.emplace(&GEPI,
                             std::pair<std::string, unsigned>{DestReg, -1});
       }
