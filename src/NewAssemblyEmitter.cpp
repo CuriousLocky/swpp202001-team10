@@ -564,7 +564,7 @@ public:
     raiseErrorIf(to - from < 0, "SExt to smaller integer type!", &SI);
     string bitToShift = std::to_string(to - from);
     emitAssembly(DestReg, "shl", {SrcReg, bitToShift, std::to_string(to)});
-    emitAssembly(DestReg, "ashr", {SrcReg, bitToShift, std::to_string(to)});
+    emitAssembly(DestReg, "ashr", {DestReg, bitToShift, std::to_string(to)});
     sextResolver.emplace(&SI, DestReg);
   }
 
