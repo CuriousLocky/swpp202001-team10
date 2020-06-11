@@ -26,19 +26,22 @@ static Value *unCast(CastInst *CI){
 }
 
 static int nonOffset(Instruction *I){
-    bool varFlag;
+    int opRegNum = 0;
+    int opArgNum = 0;
     for(int i = 0; i < I->getNumOperands(); i++){
         Value *operandV = I->getOperand(i);
         if(CastInst *operandCI = dyn_cast<CastInst>(operandV)){
             operandV = unCast(operandCI);
         }
-        if(!dyn_cast<Constant>(operandV)){
-            if(varFlag){
-                return 1;
-            }else{
-                varFlag = true;
-            }
+        if(dyn_cast<Instruction>(operandV)){
+            opRegNum++;
+        }else if(dyn_cast<Argument>(operandV)){
+            opArgNum++;
         }
+    }
+    if( (opArgNum==0 && opRegNum<=1) ||
+        (opArgNum>0 && opRegNum!=1)){
+        return 1;
     }
     for(User *user : I->users()){
         Value *userV = user;
