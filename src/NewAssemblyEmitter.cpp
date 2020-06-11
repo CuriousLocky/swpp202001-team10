@@ -553,6 +553,7 @@ public:
   void visitSExtInst(SExtInst &SI) {
     // Handle this in getOperand
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
+    auto [SrcReg, _] = getOperand(SI.getOperand(0));
     raiseErrorIf(starts_with(DestReg, tempPrefix),
       "Unresolved register name: start with tempPrefix", &SI);
     raiseErrorIf(((!SI.getSrcTy()->isIntegerTy())||
@@ -562,8 +563,8 @@ public:
     auto from = SI.getSrcTy()->getIntegerBitWidth();
     raiseErrorIf(to - from < 0, "SExt to smaller integer type!", &SI);
     string bitToShift = std::to_string(to - from);
-    emitAssembly(DestReg, "shl", {DestReg, bitToShift, std::to_string(to)});
-    emitAssembly(DestReg, "ashr", {DestReg, bitToShift, std::to_string(to)});
+    emitAssembly(DestReg, "shl", {SrcReg, bitToShift, std::to_string(to)});
+    emitAssembly(DestReg, "ashr", {SrcReg, bitToShift, std::to_string(to)});
     sextResolver.emplace(&SI, DestReg);
   }
 
