@@ -163,7 +163,7 @@ private:
   // For resolving bit_cast_ptr and offset
   unordered_map<std::string, int> nameOffsetMap;
   unordered_map<std::string, std::pair<std::string, unsigned int>> ptrResolver;
-  set<llvm::Value*> sextResolver;
+  unordered_map<llvm::Value*, std::string> sextResolver;
   unordered_map<llvm::Value*, std::pair<std::string, unsigned int>> GEPResolver;
   map<llvm::Value*, std::vector<std::string>> postOpResolver;
 
@@ -267,17 +267,8 @@ private:
         auto tmp = ptrResolver.at(I->getName().str());
         return { tmp.first, tmp.second };
       }
-      else if (sextResolver.count(I) > 0) {
-        auto SI = dyn_cast<SExtInst>(I);
-        string regToSExt = SI->getOperand(0)->getName().str();
-
-        auto from = SI->getDestTy()->getIntegerBitWidth();
-        auto   to = SI->getSrcTy()->getIntegerBitWidth();
-        string sz = std::to_string(to - from);
-
-        emitAssembly(regToSExt, "shl", {regToSExt, sz, "64"});
-        emitAssembly(regToSExt, "ashr", {regToSExt, sz, "64"});
-        return { regToSExt, -2 };
+      else if (sextResolver.count(I)) {
+        return { sextResolver.at(I), -1 };
       }
       // TODO: support GEP
       else if (GEPResolver.count(I)) {
@@ -463,15 +454,16 @@ public:
     }
 
     if (size.empty()) { // IntegerType, normal 1d ptr
-      auto [of, _] = getOperand(GEPI.getOperand(1));
+      auto [Of, _] = getOperand(GEPI.getOperand(1));
       if (starts_with(DestReg, tempPrefix)) { // All constants
         GEPResolver.emplace(&GEPI,
-                            std::pair<std::string, unsigned>{Ptr, stoi(of)});
+          std::pair<std::string, unsigned>{Ptr, stoi(Of)*elementByte});
       }
       else if (starts_with(DestReg, "r")) { // Register
-        emitAssembly(DestReg, "add", {Ptr, of, "64"});
+        emitAssembly(DestReg, "mul", {Of, std::to_string(elementByte), "64"});
+        emitAssembly(DestReg, "add", {Ptr, DestReg, "64"});
         GEPResolver.emplace(&GEPI,
-                            std::pair<std::string, unsigned>{DestReg, -1});
+          std::pair<std::string, unsigned>{DestReg, -1});
       }
       else {
         raiseError("Invalid destination register", &GEPI);
@@ -559,7 +551,19 @@ public:
 
   void visitSExtInst(SExtInst &SI) {
     // Handle this in getOperand
-    sextResolver.emplace(&SI);
+    string DestReg = getRegisterNameFromInstruction(SI, tempPrefix);
+    raiseErrorIf(starts_with(DestReg, tempPrefix),
+      "Unresolved register name: start with tempPrefix", &SI);
+    raiseErrorIf(((!SI.getSrcTy()->isIntegerTy())||
+                  (!SI.getDestTy()->isIntegerTy())),
+                  "Unsuppored type: not integer", &SI);
+    auto to = SI.getDestTy()->getIntegerBitWidth();
+    auto from = SI.getSrcTy()->getIntegerBitWidth();
+    raiseErrorIf(to - from < 0, "SExt to smaller integer type!", &SI);
+    string bitToShift = std::to_string(to - from);
+    emitAssembly(DestReg, "shl", {DestReg, bitToShift, std::to_string(to)});
+    emitAssembly(DestReg, "ashr", {DestReg, bitToShift, std::to_string(to)});
+    sextResolver.emplace(&SI, DestReg);
   }
 
   void visitTruncInst(TruncInst &TI) {
