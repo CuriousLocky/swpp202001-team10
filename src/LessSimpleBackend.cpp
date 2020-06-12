@@ -649,7 +649,7 @@ void LessSimpleBackend::resumeRegs(
 }
 
 void LessSimpleBackend::depAlloca(AllocaInst *AI){
-    int offset = frame->putOnStack(AI);
+    int offset = frame->putOnStack(AI, true, getAccessSize(AI->getType()->getPointerElementType()));
     IRBuilder<> Builder(AI);
     Instruction *posOnStack = Builder.CreateCall(
         spOffset,
@@ -1071,6 +1071,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
     depPhi(F);
     depGEP(F);
     _regAlloc(F); 
+    // outs()<<F;
     depAlloca(F);
     insertRst(F);
     placeSpSub(F);
