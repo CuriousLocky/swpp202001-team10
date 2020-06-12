@@ -718,11 +718,11 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
         nullptr,
         tempPrefix+"pos_tmep_"+PI->getName()
     );
-    AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
-        phiType,
-        nullptr,
-        tempPrefix+"pos_real_"+PI->getName()
-    );
+    // AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
+    //     phiType,
+    //     nullptr,
+    //     tempPrefix+"pos_real_"+PI->getName()
+    // );
     for(int i = 0; i < PI->getNumIncomingValues(); i++){
         Value* inValue = PI->getIncomingValue(i);
         BasicBlock* inBlock = PI->getIncomingBlock(i);
@@ -735,16 +735,16 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
     IRBuilder<> PIBuilder(PI);
     Instruction* updateCarrierDep = PIBuilder.CreateLoad(
         phiTempValOnStack,
-        PI->getName()+"_carrier"
+        PI->getName()
     );
-    Instruction* updateCarrierArr = PIBuilder.CreateStore(
-        updateCarrierDep,
-        phiRealValOnStack
-    );
-    return phiRealValOnStack;
+    // Instruction* updateCarrierArr = PIBuilder.CreateStore(
+    //     updateCarrierDep,
+    //     phiRealValOnStack
+    // );
+    return updateCarrierDep;
 }
 
-void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
+void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *newPI){
     Function *F = PI->getParent()->getParent();
     vector<pair<Instruction *, int>> newLoadList;
     vector<pair<Instruction *, int>> undefList;
@@ -764,12 +764,12 @@ void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
         }
     }
     for(auto iter : newLoadList){
-        IRBuilder<> Builder(iter.first);
-        LoadInst *loadRealVal = Builder.CreateLoad(
-            realValPos,
-            PI->getName()+"_val"
-        );
-        iter.first->setOperand(iter.second, loadRealVal);
+        // IRBuilder<> Builder(iter.first);
+        // LoadInst *loadRealVal = Builder.CreateLoad(
+        //     realValPos,
+        //     PI->getName()+"_val"
+        // );
+        iter.first->setOperand(iter.second, newPI);
     }
     for(auto iter : undefList){
         iter.first->setOperand(iter.second, UndefValue::get(PI->getType()));
