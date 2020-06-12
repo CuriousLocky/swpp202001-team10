@@ -319,12 +319,12 @@ public:
         return regs[regPos-1];
     }
     void setInst(Instruction *I, int regPos){
-        assert(regPos>0 && regPos<=REG_SIZE);
+        assert(regPos>0 && regPos<=REG_SIZE_ALL);
         regs[regPos-1] = I;
         syncFlags[regPos-1] = false;
     }
     void tryDumpRedundant(Instruction *I_current){
-        for(int i = 0; i < regs.size(); i++){
+        for(int i = 0; i < REG_SIZE; i++){
             if(regs[i]==nullptr){
                 continue;
             }
@@ -336,7 +336,7 @@ public:
     }
     int findVictimExcept(Instruction *I_current, vector<int> exceptPosList){
         set<int>possibleRegNumSet;
-        for(int i = 1; i <= regs.size(); i++){
+        for(int i = 1; i <= REG_SIZE; i++){
             possibleRegNumSet.insert(i);
         }
         for(int i = 0; i < exceptPosList.size(); i++){
@@ -404,8 +404,8 @@ public:
         return "r"+to_string(regNum)+"_"+I->getName().str();
     }
     Registers(Function *F, LessSimpleBackend *Backend):
-        F(F),Backend(Backend),regs(vector<Instruction*>(REG_SIZE))
-        ,syncFlags(vector<bool>(REG_SIZE)){
+        F(F),Backend(Backend),regs(vector<Instruction*>(REG_SIZE_ALL))
+        ,syncFlags(vector<bool>(REG_SIZE_ALL)){
         for(int i = 0; i < regs.size(); i++){
             regs[i] = nullptr;
             syncFlags[i] = true;
@@ -419,7 +419,7 @@ public:
         );
     }
     int findOnRegs(Instruction* I){
-        for(int i = 0; i < regs.size(); i++){
+        for(int i = 0; i < REG_SIZE_ALL; i++){
             if(regs[i] == I){
                 return i+1;
             }
@@ -427,7 +427,7 @@ public:
         return -1;
     }
     void printRegs(){
-        for(int i = 0; i < regs.size(); i++){
+        for(int i = 0; i < REG_SIZE_ALL; i++){
             string regName;
             if(regs[i]==nullptr){
                 regName = "nullptr";
@@ -590,32 +590,6 @@ bool LessSimpleBackend::putOnRegs(
     bool dumpFlag = false;
     if(int useNum = isUsedByItsTerminator(I)){
         victimRegNum = BR_REG;
-        if(useNum > 1){
-            IRBuilder<> Builder(I->getNextNode());
-            Instruction *allocInst = Builder.CreateAlloca(
-                I->getType(),
-                nullptr,
-                tempPrefix+I->getName()+"_pos"
-            );
-            Instruction *storeInst = Builder.CreateStore(
-                I,
-                allocInst
-            );
-            putOnRegsSet.insert(allocInst);
-            for(User *user : I->users()){
-                Instruction *userI = dyn_cast<Instruction>(userI);
-                if(I->getParent()->getTerminator() != userI){
-                    IRBuilder<> userInstBuilder(userI);
-                    Instruction *loadInst = userInstBuilder.CreateLoad(
-                        allocInst,
-                        I->getName()
-                    );
-                    userI->replaceUsesOfWith(I, loadInst);
-                    putOnRegsSet.insert(loadInst);
-                    resumeRegsSet.insert(loadInst);
-                }
-            }
-        }
     }else{
         victimRegNum = regs->findVictimExcept(I, operandOnRegs);
         if(victimRegNum < 0){
@@ -623,13 +597,14 @@ bool LessSimpleBackend::putOnRegs(
             evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
             regs->storeToFrame(regs->getInst(victimRegNum), frame, I, victimRegNum);
             dumpFlag = true;
-        }else{
-            regs->setInst(I, victimRegNum);
         }
     }
+    regs->setInst(I, victimRegNum);
     I->setName(regs->genRegName(I, victimRegNum));
     if(victimRegNum != BR_REG){
         regs->setInst(I, victimRegNum);
+    }else if(I->isUsedOutsideOfBlock(I->getParent())){
+        regs->storeToFrame(I, frame, I->getNextNode(), BR_REG);
     }
     return dumpFlag;
 }
@@ -695,7 +670,7 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
     }
     vector<Instruction*> finalRegs = regs->getRegs();
     IRBuilder<> termBuilder(BB.getTerminator());
-    for(int i = 0; i < finalRegs.size(); i++){
+    for(int i = 0; i < REG_SIZE; i++){
         if(initRegs[i] != nullptr &&
             initRegs[i] != finalRegs[i] &&
             usedAfter(initRegs[i], BB.getTerminator(), tempPrefix)){

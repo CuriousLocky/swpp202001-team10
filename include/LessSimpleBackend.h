@@ -11,6 +11,7 @@
 
 #define REG_SIZE 15
 #define BR_REG (REG_SIZE+1)
+#define REG_SIZE_ALL (REG_SIZE+1)
 
 #define POS_STACK 1
 #define POS_UNKNOWN 0
