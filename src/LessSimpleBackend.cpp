@@ -288,18 +288,6 @@ public:
         }
         return -1;
     }
-    int removeFromStack(Instruction* I){
-        int offset = 0;
-        for(int i = 0; i < frame.size(); i++){
-            if(frame[i].first == I){
-                frame[i].first = nullptr;
-                break;
-            }
-            offset+=frame[i].second;
-        }
-        mergeEmpty();
-        return offset;
-    }
     void printFrame(){
         int offset = 0;
         for(auto iter : frame){
@@ -377,7 +365,6 @@ public:
     }
     Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame,
         Instruction *InsertBefore, int regNum){
-        int offset = frame->findOnStack(IOnStack);
         IRBuilder<> Builder(InsertBefore);
         Value *loadOperand = Backend->stackMap[IOnStack];
         Instruction *newInst = Builder.CreateLoad(
@@ -1096,7 +1083,13 @@ void LessSimpleBackend::buildGVMap(){
     IRBuilder<> Builder(firstInst);
     unsigned int addr = 20480;
     for(GlobalValue &GV : main->getParent()->getGlobalList()){
-        unsigned int GVSize = getAccessSize(GV.getType()->getPointerElementType());
+        unsigned int GVSize = -1;
+        Type *targetTy = GV.getType()->getPointerElementType();
+        if(targetTy->isArrayTy()){
+            GVSize = getAccessSize(targetTy);
+        }else{
+            GVSize = getAccessSize(GV.getType());
+        }
         Builder.CreateCall(
             malloc,
             {ConstantInt::getSigned(IntegerType::getInt64Ty(main->getContext()), GVSize)},

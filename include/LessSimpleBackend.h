@@ -9,7 +9,7 @@
 #include <map>
 #include <set>
 
-#define REG_SIZE 4
+#define REG_SIZE 15
 #define BR_REG (REG_SIZE+1)
 
 #define POS_STACK 1
