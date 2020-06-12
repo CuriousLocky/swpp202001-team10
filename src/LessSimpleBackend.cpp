@@ -259,6 +259,7 @@ public:
                         frame.insert(frame.begin()+i-1, pair(nullptr, emptyBegin-offset));
                     }
                     onStackFlag = true;
+                    offset = emptyBegin;
                     break;
                 }
             }
@@ -624,6 +625,7 @@ void LessSimpleBackend::resumeRegs(
 }
 
 void LessSimpleBackend::depAlloca(AllocaInst *AI){
+    // outs()<<*AI<<": "<<getAccessSize(AI->getType()->getPointerElementType())<<"\n";
     int offset = frame->putOnStack(AI, true, getAccessSize(AI->getType()->getPointerElementType()));
     IRBuilder<> Builder(AI);
     Instruction *posOnStack = Builder.CreateCall(
@@ -1134,7 +1136,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
         }
     }
 
-    outs() << M;
+    // outs() << M;
 
     // Now, let's emit assembly!
     vector<std::string> dummyFunctionName = {
