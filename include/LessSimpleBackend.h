@@ -73,7 +73,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     llvm::BasicBlock &BB,
     std::map<llvm::BasicBlock*, int> accessPosMap);
   void insertRst(llvm::Function &F);
-  void regAlloc(llvm::BasicBlock &BB);
+  void regAlloc(llvm::BasicBlock &BB, std::set<llvm::BasicBlock*> &BBvisited);
   void _regAlloc(llvm::Function &F);
   void regAlloc(llvm::Function &F);
   void placeSpSub(llvm::Function &F);

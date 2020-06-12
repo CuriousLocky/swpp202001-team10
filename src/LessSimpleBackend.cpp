@@ -77,10 +77,10 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix)
 static bool containsUseOf(Instruction *user, Instruction *usee){
     for(int i = 0; i < user->getNumOperands(); i++){
         Value *opV = user->getOperand(i);
-        if(opV == usee){return true;}
-        if(CastInst *CI = dyn_cast<CastInst>(opV)){
-            opV = unCast(CI);
-        }
+        // if(opV == usee){return true;}
+        // if(CastInst *CI = dyn_cast<CastInst>(opV)){
+        //     opV = unCast(CI);
+        // }
         if(opV == usee){return true;}
     }
     return false;
@@ -98,7 +98,7 @@ static bool usedAfterDFS(Instruction *I, Instruction *I_current, BasicBlock *BB,
     }
     return false;
 }
-static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
+static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
     while(walkerInst != localTerm){
@@ -108,6 +108,23 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix)
     set<BasicBlock*> visitedBlockSet;
     for(int i = 0; i < localTerm->getNumSuccessors(); i++){
         if(usedAfterDFS(I, I_current, localTerm->getSuccessor(i), visitedBlockSet)){return true;}
+    }
+    return false;
+}
+static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
+    vector<Instruction*> searchList;
+    searchList.push_back(I);
+    for(User *user : I->users()){
+        if(CastInst *CI = dyn_cast<CastInst>(user)){
+            if(CI->getName().startswith(tempPrefix)){
+                searchList.push_back(CI);
+            }
+        }
+    }
+    for(Instruction *searchI : searchList){
+        if(_usedAfter(searchI, I_current, tempPrefix)){
+            return true;
+        }
     }
     return false;
 }
@@ -305,6 +322,7 @@ public:
 
 class LessSimpleBackend::Registers{
     vector<Instruction*> regs;
+    vector<bool> syncFlags;
     Function *F;
     LessSimpleBackend *Backend;
 public:
@@ -315,6 +333,7 @@ public:
     void setInst(Instruction *I, int regPos){
         assert(regPos>0 && regPos<=REG_SIZE);
         regs[regPos-1] = I;
+        syncFlags[regPos-1] = false;
     }
     void tryDumpRedundant(Instruction *I_current){
         for(int i = 0; i < regs.size(); i++){
@@ -323,6 +342,7 @@ public:
             }
             if(!usedAfter(regs[i], I_current, Backend->getTempPrefix())){
                 regs[i] = nullptr;
+                syncFlags[i] = true;
             }
         }
     }
@@ -334,13 +354,19 @@ public:
         for(int i = 0; i < exceptPosList.size(); i++){
             possibleRegNumSet.erase(exceptPosList[i]);
         }
+        tryDumpRedundant(I_current);
         for(int possibleRegNum : possibleRegNumSet){
             if(regs[possibleRegNum-1] == nullptr){
                 return possibleRegNum;
             }
         }
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     if(!usedAfter(regs[possibleRegNum-1], I_current, Backend->getTempPrefix())){
+        //         return possibleRegNum;
+        //     }
+        // }
         for(int possibleRegNum : possibleRegNumSet){
-            if(!usedAfter(regs[possibleRegNum-1], I_current, Backend->getTempPrefix())){
+            if(syncFlags[possibleRegNum-1]){
                 return possibleRegNum;
             }
         }
@@ -359,6 +385,7 @@ public:
             genRegName(IOnStack, regNum)
         );
         regs[regNum-1] = IOnStack;
+        syncFlags[regNum-1] = true;
         return newInst;
     }
     void storeToFrame(Instruction *IOnReg, StackFrame *frame,
@@ -366,6 +393,9 @@ public:
         if(regNum <= 0){
             regNum = findOnRegs(IOnReg);
             assert(regNum>0);
+        }
+        if(syncFlags[regNum-1]){
+            return;
         }
         IRBuilder<> Builder(InsertBefore);
         if(Backend->stackMap.count(IOnReg)==0){
@@ -380,16 +410,26 @@ public:
             IOnReg,
             Backend->stackMap[IOnReg]
         );
-        //regs[regNum-1] = nullptr;
+        syncFlags[regNum-1] = true;
+        regs[regNum-1] = nullptr;
     }
     string genRegName(Instruction *I, int regNum){
         return "r"+to_string(regNum)+"_"+I->getName().str();
     }
     Registers(Function *F, LessSimpleBackend *Backend):
-        F(F),Backend(Backend),regs(vector<Instruction*>(REG_SIZE)){
+        F(F),Backend(Backend),regs(vector<Instruction*>(REG_SIZE))
+        ,syncFlags(vector<bool>(REG_SIZE)){
         for(int i = 0; i < regs.size(); i++){
             regs[i] = nullptr;
+            syncFlags[i] = true;
         }
+    }
+    Registers(tuple<Function*, LessSimpleBackend*, vector<Instruction*>, vector<bool>> save):
+    F(get<0>(save)),Backend(get<1>(save)),regs(get<2>(save)),syncFlags(get<3>(save)){} 
+    tuple<Function*, LessSimpleBackend*, vector<Instruction*>, vector<bool>> getSave(){
+        return make_tuple<>(
+            F, Backend, regs, syncFlags
+        );
     }
     int findOnRegs(Instruction* I){
         for(int i = 0; i < regs.size(); i++){
@@ -401,21 +441,23 @@ public:
     }
     void printRegs(){
         for(int i = 0; i < regs.size(); i++){
-            string regName = "nullptr";
-            if(regs[i]!=nullptr){
+            string regName;
+            if(regs[i]==nullptr){
+                regName = "nullptr";
+            }else if(!regs[i]->hasName()){
+                outs()<<"r"<<i+1<<": "<<regs[i]<<"\n";
+                continue;
+            }else{
                 regName = regs[i]->getName();
             }
-        }
-    }
-    void replaceWith(Instruction *oldInst, Instruction *newInst){
-        for(int i = 0; i < regs.size(); i++){
-            if(regs[i] == oldInst){
-                regs[i] = newInst;
-            }
+            outs()<<"r"<<i+1<<": "<<regName<<"\n";
         }
     }
     vector<Instruction*> getRegs(){
         return regs;
+    }
+    vector<bool> getSyncFlags(){
+        return syncFlags;
     }
 };
 
@@ -653,7 +695,9 @@ void LessSimpleBackend::depAlloca(Function &F){
     }
 }
 
-void LessSimpleBackend::regAlloc(BasicBlock &BB){
+void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
+    if(BBvisited.count(&BB)){return;}
+    else{BBvisited.insert(&BB);}
     vector<Instruction*> initRegs = regs->getRegs();
     for(Instruction &I : BB){
         if(I.getName().startswith(tempPrefix)){continue;}
@@ -679,12 +723,20 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB){
             regs->loadToReg(initRegs[i], frame, BB.getTerminator(), i+1);
         }
     }
+    Registers *originalRegs = this->regs;
+    auto save = regs->getSave();
+    for(int i = 0; i < BB.getTerminator()->getNumSuccessors(); i++){
+        this->regs = new Registers(save);
+        regAlloc(*BB.getTerminator()->getSuccessor(i), BBvisited);
+        delete(this->regs);
+        this->regs = originalRegs;
+    }
 }
 
 void LessSimpleBackend::_regAlloc(Function &F){
-    for(BasicBlock &BB :F){
-        regAlloc(BB);
-    }
+    BasicBlock &BBE = F.getEntryBlock();
+    set<BasicBlock*> BBvisited;
+    regAlloc(BBE, BBvisited);
 }
 
 void LessSimpleBackend::regAlloc(Function& F){
@@ -729,12 +781,6 @@ void LessSimpleBackend::depCast(Function &F){
     }
     for(CastInst *BCI : BCIList){
         depCast(BCI);
-    }
-}
-
-static void replaceUseOfWithIn(Value *oldVal, Value *newVal, BasicBlock *BB){
-    for(Instruction &I : BB->getInstList()){
-        I.replaceUsesOfWith(oldVal, newVal);
     }
 }
 
@@ -900,7 +946,7 @@ void LessSimpleBackend::depGV(){
             IntToPtrInst *ITPI = new IntToPtrInst(
                 ConstantInt::getSigned(IntegerType::getInt64Ty(userInst->getContext()), pos),
                 GV->getType(),
-                "depGV_"+GV->getName(),
+                tempPrefix+"depGV_"+GV->getName(),
                 userInst
             );
             userInst->replaceUsesOfWith(GV, ITPI);
@@ -1037,7 +1083,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
     depCast(F);
     depPhi(F);
     depGEP(F);
-    regAlloc(F); 
+    _regAlloc(F); 
     depAlloca(F);
     insertRst(F);
     placeSpSub(F);
