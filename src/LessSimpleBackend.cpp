@@ -98,18 +98,6 @@ static bool usedAfterDFS(Instruction *I, Instruction *I_current, BasicBlock *BB,
     }
     return false;
 }
-static void fillCastList(Instruction *I, vector<Instruction*> &castList, string tempPrefix){
-    for(User *user : I->users()){
-        if(Instruction *userI = dyn_cast<Instruction>(user)){
-            if(dyn_cast<CastInst>(userI) && 
-                containsUseOf(userI, I) && 
-                userI->getName().startswith(tempPrefix)){
-                castList.push_back(userI);
-                fillCastList(userI, castList, tempPrefix);
-            }            
-        }
-    }
-}
 static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
@@ -120,11 +108,6 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix)
     set<BasicBlock*> visitedBlockSet;
     for(int i = 0; i < localTerm->getNumSuccessors(); i++){
         if(usedAfterDFS(I, I_current, localTerm->getSuccessor(i), visitedBlockSet)){return true;}
-    }
-    vector<Instruction*> castList;
-    fillCastList(I, castList, tempPrefix);
-    for(Instruction *castInst : castList){
-        if(usedAfter(castInst, I_current, tempPrefix)){return true;}
     }
     return false;
 }
