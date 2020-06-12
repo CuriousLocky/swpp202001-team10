@@ -36,7 +36,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   class Registers;
   class StackFrame;
   Registers *regs;
-  StackFrame *frame;  
+  StackFrame *frame;
   void depromoteReg(llvm::Function &F);
   //void depromoteReg_BB(llvm::BasicBlock &B);
   int getAccessPos(llvm::Value *V);
@@ -47,15 +47,15 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     std::vector<llvm::Instruction*> &relatedInstList
   );
   void loadOperands(
-    llvm::Instruction *I, 
-    std::vector<std::pair<llvm::Instruction*, int>> &evicRegs, 
+    llvm::Instruction *I,
+    std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
     std::vector<int> &operandOnRegs);
   bool putOnRegs(
-    llvm::Instruction *I, 
+    llvm::Instruction *I,
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
     std::vector<int> &operandOnRegs);
   void resumeRegs(
-    llvm::Instruction *I, 
+    llvm::Instruction *I,
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
     bool dumpFlag);
   void depAlloca(llvm::AllocaInst *AI);

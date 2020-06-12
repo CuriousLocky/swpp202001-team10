@@ -1,10 +1,9 @@
 #include "LessSimpleBackend.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/InstVisitor.h"
+#include <cmath>
 #include <regex>
-#include <set>
 #include <sstream>
-#include <string>
 
 using namespace llvm;
 using namespace std;
@@ -202,7 +201,6 @@ private:
     FnBody.push_back(name + ":");
   }
 
-  // TODO: support SExt
   // If V is a register or constant, return its name.
   // If V is alloca, return its offset from stack.
   pair<string, int> getOperand(Value *V, bool shouldNotBeStackSlot = true) {
@@ -270,7 +268,6 @@ private:
       else if (sextResolver.count(I)) {
         return { sextResolver.at(I), -1 };
       }
-      // TODO: support GEP
       else if (GEPResolver.count(I)) {
         auto tmp = GEPResolver.at(I);
         return { tmp.first, tmp.second };
@@ -425,7 +422,7 @@ public:
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
     emitAssembly(DestReg, "select", {Op1, Op2, Op3});
   }
-
+  // TODO: avoid add 0
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
   /*
   <result> = getelementptr <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
@@ -531,10 +528,16 @@ public:
           ini += stoi(indices[i]);
           ini *= size[i];
         }
-        emitAssembly(DestReg, "add",
-                    { std::to_string(ini), indices[firstRegIdx] ,"64" });
-        emitAssembly(DestReg, "mul",
-                    { DestReg, std::to_string(size[firstRegIdx]), "64"});
+        if (ini) {
+          emitAssembly(DestReg, "add",
+                       { std::to_string(ini), indices[firstRegIdx] ,"64" });
+          emitAssembly(DestReg, "mul",
+                       { DestReg, std::to_string(size[firstRegIdx]), "64"} );
+        } else {
+          emitAssembly(DestReg, "mul",
+                    { indices[firstRegIdx], std::to_string(size[firstRegIdx]), "64"});
+        }
+
         for (unsigned j = firstRegIdx+1; j < indices.size(); j++) {
           emitAssembly(DestReg, "add",
                     { DestReg, indices[j] ,"64" });
@@ -567,7 +570,7 @@ public:
     }
     // castDestReg.emplace(ZI.getName().str(), resolveCast(ZI));
   }
-
+  // TODO: Use multiplification instead of shift
   void visitSExtInst(SExtInst &SI) {
     // Handle this in getOperand
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
@@ -580,8 +583,10 @@ public:
     auto to = SI.getDestTy()->getIntegerBitWidth();
     auto from = SI.getSrcTy()->getIntegerBitWidth();
     raiseErrorIf(to - from < 0, "SExt to smaller integer type!", &SI);
+    string facToMul = std::to_string((uint64_t)pow(2, to - from));
     string bitToShift = std::to_string(to - from);
-    emitAssembly(DestReg, "shl", {SrcReg, bitToShift, std::to_string(to)});
+    emitAssembly(DestReg, "mul", {SrcReg, facToMul, std::to_string(to)});
+    // emitAssembly(DestReg, "shl", {SrcReg, bitToShift, std::to_string(to)});
     emitAssembly(DestReg, "ashr", {DestReg, bitToShift, std::to_string(to)});
     sextResolver.emplace(&SI, DestReg);
   }
