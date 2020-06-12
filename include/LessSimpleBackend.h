@@ -31,15 +31,11 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   llvm::Function *malloc;
   llvm::Function *main;
   std::map<llvm::Value*, unsigned int> globalVarMap;
-  std::set<llvm::Instruction*> loadOperandsSet;
-  std::set<llvm::Instruction*> putOnRegsSet;
-  std::set<llvm::Instruction*> resumeRegsSet;
   class Registers;
   class StackFrame;
   Registers *regs;
   StackFrame *frame;
   void depromoteReg(llvm::Function &F);
-  //void depromoteReg_BB(llvm::BasicBlock &B);
   int getAccessPos(llvm::Value *V);
   llvm::Function* getSpOffsetFn();
   void removeInst(llvm::Instruction *I);
@@ -75,7 +71,6 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
     std::map<llvm::BasicBlock*, int> accessPosMap);
   void insertRst(llvm::Function &F);
   void regAlloc(llvm::BasicBlock &BB, std::set<llvm::BasicBlock*> &BBvisited);
-  void _regAlloc(llvm::Function &F);
   void regAlloc(llvm::Function &F);
   void placeSpSub(llvm::Function &F);
   void buildGVMap();

@@ -73,7 +73,6 @@ static CastInst *getCastInst(Value *from, Type *to, Instruction *insertBefore){
     }
     return nullptr;
 }
-static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix);
 static bool containsUseOf(Instruction *user, Instruction *usee){
     for(int i = 0; i < user->getNumOperands(); i++){
         Value *opV = user->getOperand(i);
@@ -349,11 +348,6 @@ public:
                 return possibleRegNum;
             }
         }
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     if(!usedAfter(regs[possibleRegNum-1], I_current, Backend->getTempPrefix())){
-        //         return possibleRegNum;
-        //     }
-        // }
         for(int possibleRegNum : possibleRegNumSet){
             if(syncFlags[possibleRegNum-1]){
                 return possibleRegNum;
@@ -481,15 +475,6 @@ Function *LessSimpleBackend::getRstS(){return rstS;}
 string LessSimpleBackend::getTempPrefix(){return tempPrefix;}
 
 void LessSimpleBackend::removeInst(Instruction *I){
-    if(loadOperandsSet.count(I)){
-        loadOperandsSet.erase(I);
-    }
-    if(putOnRegsSet.count(I)){
-        putOnRegsSet.erase(I);
-    }
-    if(resumeRegsSet.count(I)){
-        resumeRegsSet.erase(I);
-    }
     I->removeFromParent();
     I->deleteValue();
 }
@@ -625,7 +610,6 @@ void LessSimpleBackend::resumeRegs(
 }
 
 void LessSimpleBackend::depAlloca(AllocaInst *AI){
-    // outs()<<*AI<<": "<<getAccessSize(AI->getType()->getPointerElementType())<<"\n";
     int offset = frame->putOnStack(AI, true, getAccessSize(AI->getType()->getPointerElementType()));
     IRBuilder<> Builder(AI);
     Instruction *posOnStack = Builder.CreateCall(
@@ -697,34 +681,10 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
     }
 }
 
-void LessSimpleBackend::_regAlloc(Function &F){
+void LessSimpleBackend::regAlloc(Function &F){
     BasicBlock &BBE = F.getEntryBlock();
     set<BasicBlock*> BBvisited;
     regAlloc(BBE, BBvisited);
-}
-
-void LessSimpleBackend::regAlloc(Function& F){
-    vector<Instruction*> instToAllocList;
-    for(BasicBlock &BB : F){
-        for(Instruction &I : BB){
-            Instruction *instToAlloc = &I;
-            vector<pair<Instruction*, int>> evicRegs;
-            vector<int> operandOnRegs;
-            bool dumpFlag = false;
-            if(instToAlloc->getName().startswith(tempPrefix)){
-                continue;
-            }
-            if(loadOperandsSet.count(instToAlloc)){
-                loadOperands(instToAlloc, evicRegs, operandOnRegs);
-            }
-            if(putOnRegsSet.count(instToAlloc)){
-                dumpFlag = putOnRegs(instToAlloc, evicRegs, operandOnRegs);
-            }
-            if(resumeRegsSet.count(instToAlloc)){
-                resumeRegs(instToAlloc, evicRegs, dumpFlag);
-            }
-        }
-    }
 }
 
 void LessSimpleBackend::depCast(CastInst *CI){
@@ -758,7 +718,6 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
         nullptr,
         tempPrefix+"pos_tmep_"+PI->getName()
     );
-    putOnRegsSet.insert(phiTempValOnStack);
     AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
         phiType,
         nullptr,
@@ -772,23 +731,16 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
             inValue,
             phiTempValOnStack
         );
-        loadOperandsSet.insert(storePI);
-        resumeRegsSet.insert(storePI);
     }
     IRBuilder<> PIBuilder(PI);
     Instruction* updateCarrierDep = PIBuilder.CreateLoad(
         phiTempValOnStack,
         PI->getName()+"_carrier"
     );
-    loadOperandsSet.insert(updateCarrierDep);
-    putOnRegsSet.insert(updateCarrierDep);
-    resumeRegsSet.insert(updateCarrierDep);
     Instruction* updateCarrierArr = PIBuilder.CreateStore(
         updateCarrierDep,
         phiRealValOnStack
     );
-    loadOperandsSet.insert(updateCarrierArr);
-    resumeRegsSet.insert(updateCarrierArr);
     return phiRealValOnStack;
 }
 
@@ -818,9 +770,6 @@ void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
             PI->getName()+"_val"
         );
         iter.first->setOperand(iter.second, loadRealVal);
-        loadOperandsSet.insert(loadRealVal);
-        putOnRegsSet.insert(loadRealVal);
-        resumeRegsSet.insert(loadRealVal);
     }
     for(auto iter : undefList){
         iter.first->setOperand(iter.second, UndefValue::get(PI->getType()));
@@ -1032,23 +981,10 @@ void LessSimpleBackend::depromoteReg(Function &F){
     }
     regs = new LessSimpleBackend::Registers(&F, this);
     frame = new LessSimpleBackend::StackFrame(&F, this);
-    vector<Instruction*> instList;
-    for(BasicBlock &BB : F){
-        for(Instruction &I : BB){
-            if(!I.getName().startswith(tempPrefix)){
-                loadOperandsSet.insert(&I);
-                if(I.hasName()){
-                    putOnRegsSet.insert(&I);
-                }
-                resumeRegsSet.insert(&I);
-            }
-        }
-    }
     depCast(F);
     depPhi(F);
     depGEP(F);
-    _regAlloc(F); 
-    // outs()<<F;
+    regAlloc(F); 
     depAlloca(F);
     insertRst(F);
     placeSpSub(F);
