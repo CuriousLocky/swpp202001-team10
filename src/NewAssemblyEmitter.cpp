@@ -459,6 +459,7 @@ public:
         emitAssembly(DestReg, "add", {Ptr, DestReg, "64"});
         GEPResolver.emplace(&GEPI,
           std::pair<std::string, unsigned>{DestReg, -1});
+        return;
       }
       else {
         raiseError("Invalid destination register", &GEPI);
