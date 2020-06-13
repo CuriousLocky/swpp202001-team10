@@ -23,8 +23,6 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   std::string tempPrefix;
   bool printDepromotedModule;
   std::map<llvm::Instruction*, llvm::Value*> stackMap;
-  // std::set<llvm::Instruction*> newPhiSet;
-  //std::map<llvm::Instruction*, llvm::Instruction*> stackMapRev;
   llvm::Function *spOffset;
   llvm::Function *spSub;
   llvm::Function *rstH;
@@ -41,10 +39,6 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   int getAccessPos(llvm::Value *V);
   llvm::Function* getSpOffsetFn();
   void removeInst(llvm::Instruction *I);
-  void loadRelatedOperands(
-    llvm::Instruction *tempI,
-    std::vector<llvm::Instruction*> &relatedInstList
-  );
   void loadOperands(
     llvm::Instruction *I,
     std::vector<std::pair<llvm::Instruction*, int>> &evicRegs,
@@ -61,8 +55,6 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void depAlloca(llvm::Function &F);
   void depCast(llvm::CastInst *BCI);
   void depCast(llvm::Function &F);
-  llvm::Instruction *depPhi(llvm::PHINode *PI);
-  void __depPhi(llvm::PHINode *PI, llvm::Instruction *realValPos);
   std::set<llvm::Instruction*> depPhi(llvm::Function &F);
   void phiUpdatePatch(std::set<llvm::Instruction*> &newPhiSet);
   void depGEP(llvm::GetElementPtrInst *GEPI);

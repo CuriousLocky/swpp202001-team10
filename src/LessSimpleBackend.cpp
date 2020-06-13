@@ -28,28 +28,6 @@ static Value *unCast(CastInst *CI){
     }
 }
 
-static int nonOffset(Instruction *I){
-    for(User *user : I->users()){
-        Value *userV = user;
-        if(CastInst *CI = dyn_cast<CastInst>(userV)){
-            userV = unCast(CI);
-        }
-        if(Instruction *userInst = dyn_cast<Instruction>(user)){
-            if(
-                (dyn_cast<StoreInst>(userInst) &&
-                userInst->getOperand(1) == I) ||
-                (dyn_cast<LoadInst>(userInst) &&
-                userInst->getOperand(0) == I)
-                ){
-                continue;
-            }else{
-                return 2;
-            }
-        }
-    }
-    return 0;
-}
-
 static CastInst *getCastInst(Value *from, Type *to, Instruction *insertBefore){
     if(from->getType()->isPointerTy() && to->isPointerTy()){
         return new BitCastInst(from, to, "", insertBefore);
@@ -76,10 +54,6 @@ static CastInst *getCastInst(Value *from, Type *to, Instruction *insertBefore){
 static bool containsUseOf(Instruction *user, Instruction *usee){
     for(int i = 0; i < user->getNumOperands(); i++){
         Value *opV = user->getOperand(i);
-        // if(opV == usee){return true;}
-        // if(CastInst *CI = dyn_cast<CastInst>(opV)){
-        //     opV = unCast(CI);
-        // }
         if(opV == usee){return true;}
     }
     return false;
@@ -316,7 +290,7 @@ class LessSimpleBackend::Registers{
     LessSimpleBackend *Backend;
 public:
     Instruction* getInst(int regPos){
-        assert(regPos>0 && regPos<=REG_SIZE);
+        assert(regPos>0 && regPos<=REG_SIZE_ALL);
         return regs[regPos-1];
     }
     void setInst(Instruction *I, int regPos){
@@ -409,17 +383,13 @@ public:
         }
     }
     Registers(tuple<Function*, LessSimpleBackend*, vector<Instruction*>, vector<bool>> save):
-    F(get<0>(save)),Backend(get<1>(save)),regs(get<2>(save)),syncFlags(get<3>(save)){}
+        F(get<0>(save)),Backend(get<1>(save)),regs(get<2>(save)),syncFlags(get<3>(save)){}
     tuple<Function*, LessSimpleBackend*, vector<Instruction*>, vector<bool>> getSave(){
-        return make_tuple<>(
-            F, Backend, regs, syncFlags
-        );
+        return make_tuple<>(F, Backend, regs, syncFlags);
     }
     int findOnRegs(Instruction* I){
         for(int i = 0; i < REG_SIZE_ALL; i++){
-            if(regs[i] == I){
-                return i+1;
-            }
+            if(regs[i] == I){return i+1;}
         }
         return -1;
     }
@@ -481,21 +451,6 @@ void LessSimpleBackend::removeInst(Instruction *I){
     I->deleteValue();
 }
 
-void LessSimpleBackend::loadRelatedOperands(
-    Instruction *tempI,
-    vector<Instruction*> &relatedInstList){
-    for(int i = 0; i < tempI->getNumOperands(); i++){
-        Value *operandV = tempI->getOperand(i);
-        if(Instruction *operandI = dyn_cast<Instruction>(operandV)){
-            if(operandI->getName().startswith(tempPrefix)){
-                loadRelatedOperands(operandI, relatedInstList);
-            }else{
-                relatedInstList.push_back(operandI);
-            }
-        }
-    }
-}
-
 void LessSimpleBackend::loadOperands(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
     vector<int> &operandOnRegs){
@@ -518,12 +473,6 @@ void LessSimpleBackend::loadOperands(
                     relatedInstMap[operand_I] = I->getOperand(i);
                 }
             }
-            // if(TruncInst *TI = dyn_cast<TruncInst>(I->getOperand(i))){
-            //     outs()<<*I<<"\n";
-            //     outs()<<*TI<<"\n";
-            //     outs()<<*operand<<"\n";
-            //     outs()<<"\n";
-            // }
         }
         for(Instruction *relatedInst : relatedInstList){
             int regNum = regs->findOnRegs(relatedInst);
@@ -578,18 +527,14 @@ void LessSimpleBackend::loadOperands(
         }
 }
 
-static int isUsedByItsTerminator(Instruction *I){
+static bool isUsedByItsTerminator(Instruction *I){
     Instruction *term = I->getParent()->getTerminator();
     for(int i = 0; i < term->getNumOperands(); i++){
-        if(I == term->getOperand(i)){
-            int userNum = 0;
-            for(auto user : I->users()){
-                userNum++;
-            }
-            return userNum;
-        }
+        Value *operandV = term->getOperand(i);
+        if(auto*CI = dyn_cast<CastInst>(operandV)){operandV=unCast(CI);}
+        if(I == term->getOperand(i)){return true;}
     }
-    return 0;
+    return false;
 }
 
 bool LessSimpleBackend::putOnRegs(
@@ -600,7 +545,7 @@ bool LessSimpleBackend::putOnRegs(
     }
     int victimRegNum;
     bool dumpFlag = false;
-    if(int useNum = isUsedByItsTerminator(I)){
+    if(isUsedByItsTerminator(I)){
         victimRegNum = BR_REG;
     }else{
         victimRegNum = regs->findVictimExcept(I, operandOnRegs);
@@ -619,20 +564,6 @@ bool LessSimpleBackend::putOnRegs(
         regs->storeToFrame(I, frame, I->getNextNode(), BR_REG);
     }
     return dumpFlag;
-}
-
-void LessSimpleBackend::resumeRegs(
-    Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
-    bool dumpFlag=false){
-    Instruction *I_next = I->getNextNode();
-    if(dumpFlag){
-        regs->storeToFrame(I, frame, I_next, 0);
-    }
-    for(int i = evicRegs.size()-1; i >= 0; i--){
-        Instruction *IOnStack = evicRegs[i].first;
-        int regPos = evicRegs[i].second;
-        regs->loadToReg(IOnStack, frame, I_next, regPos);
-    }
 }
 
 void LessSimpleBackend::depAlloca(AllocaInst *AI){
@@ -735,75 +666,6 @@ void LessSimpleBackend::depCast(Function &F){
     }
 }
 
-Instruction *LessSimpleBackend::depPhi(PHINode *PI){
-    Type* phiType = PI->getIncomingValue(0)->getType();
-    int phiSize = getAccessSize(phiType);
-    BasicBlock &entryBlock = PI->getFunction()->getEntryBlock();
-    IRBuilder<> entryBuilder(entryBlock.getFirstNonPHI());
-    AllocaInst *phiTempValOnStack = entryBuilder.CreateAlloca(
-        phiType,
-        nullptr,
-        tempPrefix+"pos_tmep_"+PI->getName()
-    );
-    AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
-        phiType,
-        nullptr,
-        tempPrefix+"pos_real_"+PI->getName()
-    );
-    for(int i = 0; i < PI->getNumIncomingValues(); i++){
-        Value* inValue = PI->getIncomingValue(i);
-        BasicBlock* inBlock = PI->getIncomingBlock(i);
-        IRBuilder<> blockBuilder(inBlock->getTerminator());
-        Instruction *storePI = blockBuilder.CreateStore(
-            inValue,
-            phiTempValOnStack
-        );
-    }
-    IRBuilder<> PIBuilder(PI);
-    Instruction* updateCarrierDep = PIBuilder.CreateLoad(
-        phiTempValOnStack,
-        PI->getName()+"_carrier"
-    );
-    Instruction* updateCarrierArr = PIBuilder.CreateStore(
-        updateCarrierDep,
-        phiRealValOnStack
-    );
-    return phiRealValOnStack;
-}
-
-void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
-    Function *F = PI->getParent()->getParent();
-    vector<pair<Instruction *, int>> newLoadList;
-    vector<pair<Instruction *, int>> undefList;
-    for(BasicBlock &BB : F->getBasicBlockList()){
-        for(Instruction &I : BB){
-            for(int i = 0; i < I.getNumOperands(); i++){
-                Value *operandV = I.getOperand(i);
-                PHINode *operandPI = dyn_cast<PHINode>(operandV);
-                if(operandPI == PI){
-                    if(dyn_cast<PHINode>(&I)){
-                        undefList.push_back(pair(&I, i));
-                    }else{
-                        newLoadList.push_back(pair(&I, i));
-                    }
-                }
-            }
-        }
-    }
-    for(auto iter : newLoadList){
-        IRBuilder<> Builder(iter.first);
-        LoadInst *loadRealVal = Builder.CreateLoad(
-            realValPos,
-            PI->getName()+"_val"
-        );
-        iter.first->setOperand(iter.second, loadRealVal);
-    }
-    for(auto iter : undefList){
-        iter.first->setOperand(iter.second, UndefValue::get(PI->getType()));
-    }
-    removeInst(PI);
-}
-
 set<Instruction*> LessSimpleBackend::depPhi(Function &F){
     vector<PHINode*> phiList;
     map<PHINode*, Instruction*> phiMap;
@@ -816,14 +678,6 @@ set<Instruction*> LessSimpleBackend::depPhi(Function &F){
             }
         }
     }
-    // for(PHINode *PI : phiList){
-    //     phiMap[PI] = depPhi(PI);
-    // }
-    // for(auto iter : phiMap){
-    //     PHINode *PI = iter.first;
-    //     Instruction *realValPos = iter.second;
-    //     __depPhi(PI, realValPos);
-    // }
     for(PHINode *PI : phiList){
         IRBuilder<> entryBuilder(F.getEntryBlock().getFirstNonPHI());
         IRBuilder<> Builder(PI);
@@ -867,22 +721,16 @@ void LessSimpleBackend::phiUpdatePatch(set<Instruction*> &newPhiSet){
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
     Value *ptr = GEPI->getOperand(0);
     if(CastInst *CI = dyn_cast<CastInst>(ptr)){
-        ptr = unCast(CI);
-    }
+        ptr = unCast(CI);}
     if(dyn_cast<AllocaInst>(ptr) ||
         dyn_cast<Constant>(ptr)){
-        if(ptr->hasName() && !(ptr->getName().startswith(tempPrefix))){
-            return;
-        }
+        if(ptr->hasName() && !(ptr->getName().startswith(tempPrefix))){return;}
         for(int i = 1; i < GEPI->getNumOperands(); i++){
             Value *operandV = GEPI->getOperand(i);
             if(CastInst *CI = dyn_cast<CastInst>(operandV)){
-                operandV = unCast(CI);
-            }
+                operandV = unCast(CI);}
             if(Constant *C = dyn_cast<Constant>(operandV)){
-            }else{
-                return;
-            }
+            }else{return; }
         }
         GEPI->setName(tempPrefix + GEPI->getName());
     }
@@ -973,9 +821,7 @@ int LessSimpleBackend::insertRst(BasicBlock &BB){
         if(dyn_cast<StoreInst>(I_p) ||
             dyn_cast<LoadInst>(I_p)){
             currentAccess = getAccessPos(I_p);
-        }else{
-            continue;
-        }
+        }else{continue;}
         if(accessPos!=POS_UNINIT && accessPos!=POS_UNKNOWN && currentAccess!=accessPos){
             IRBuilder<> Builder(I_p);
             if(currentAccess == POS_STACK){
@@ -1004,16 +850,13 @@ static int getPrevAccessPos(BasicBlock *BB, map<BasicBlock*, int> accessPosMap){
             return POS_UNKNOWN;
         }
     }
-    if(accessPos == POS_UNINIT)
-        return POS_UNKNOWN;
+    if(accessPos == POS_UNINIT){return POS_UNKNOWN;}  
     return accessPos;
 }
 
 void LessSimpleBackend::insertRst_first(BasicBlock &BB, map<BasicBlock*, int> accessPosMap){
     int prevAccessPos = getPrevAccessPos(&BB, accessPosMap);
-    if(prevAccessPos == POS_UNKNOWN){
-        return;
-    }
+    if(prevAccessPos == POS_UNKNOWN){return;}
     for(Instruction &I : BB){
         int currentAccess = POS_UNINIT;
         if(dyn_cast<StoreInst>(&I) ||
@@ -1058,11 +901,8 @@ static Instruction* delayAllocaDFS(AllocaInst *AI, set<BasicBlock*> visitedBB, B
     for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
         Instruction *childResult = delayAllocaDFS(AI, visitedBB, BB->getTerminator()->getSuccessor(i));
         if(childResult!=nullptr){
-            if(result == nullptr){
-                result = childResult;
-            }else{
-                return BB->getTerminator();
-            }
+            if(result == nullptr){result = childResult;}
+            else{return BB->getTerminator();}
         }
     }
     return result;
@@ -1106,10 +946,8 @@ void LessSimpleBackend::depromoteReg(Function &F){
     frame = new LessSimpleBackend::StackFrame(&F, this);
     depCast(F);
     auto newPhiSet = depPhi(F);
-    // outs()<<F;
     depGEP(F);
     regAlloc(F);
-    // outs()<<F;
     delayAlloca(F);
     depAlloca(F);
     insertRst(F);
@@ -1141,9 +979,7 @@ void LessSimpleBackend::buildGVMap(){
 }
 
 PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
-    if (verifyModule(M, &errs(), nullptr)){
-        exit(1);
-    }
+    if (verifyModule(M, &errs(), nullptr)){exit(1);}
 
     // First, name all instructions / arguments / etc.
     InstNamer Namer;
