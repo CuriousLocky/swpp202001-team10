@@ -958,6 +958,8 @@ int LessSimpleBackend::getAccessPos(Value *V){
             return POS_STACK;
         }else if(calledFunc == malloc){
             return POS_HEAP;
+        }else if(calledFunc == regSwitch){
+            return getAccessPos(CI->getArgOperand(0));
         }
     }
     return POS_UNKNOWN;
