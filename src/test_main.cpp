@@ -27,7 +27,7 @@ TEST(TestDemo, CheckMain) {
   raw_string_ostream os(str);
 
   std::vector<std::string> dummyFunctionName = {
-    "resetStack", "resetHeap", "spOffset", "spSub"
+    "resetStack", "resetHeap", "spOffset", "spSub", "regSwitch", "temp_p_"
   };
   NewAssemblyEmitter(&os, dummyFunctionName).run(M.get());
 
