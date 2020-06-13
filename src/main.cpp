@@ -91,12 +91,12 @@ int main(int argc, char **argv) {
   // FPM.addPass(Alloca2reg());
   
   // CGSCC-level pass
-  // CGSCCPassManager CGPM;
-  // CGPM.addPass(InlinerPass());
+  CGSCCPassManager CGPM;
+  CGPM.addPass(InlinerPass());
 
   ModulePassManager MPM;
-  //MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
-  //MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
   // If you want to add your module-level pass, add MPM.addPass(MyPass2()) here.
   // MPM.addPass(DeadArgumentEliminationPass());
   // MPM.addPass(GlobalOptPass());

@@ -84,35 +84,37 @@ static bool containsUseOf(Instruction *user, Instruction *usee){
     }
     return false;
 }
-static bool usedAfterDFS(Instruction *I, Instruction *I_current, BasicBlock *BB, set<BasicBlock*> &visitedBlockSet){
+static bool usedAfterDFS(
+    Instruction *I, Instruction *I_current, BasicBlock *BB,
+    set<BasicBlock*> &visitedBlockSet, bool selfFlag){
     if(visitedBlockSet.count(BB)){return false;}
     for(Instruction &instOfBB : BB->getInstList()){
-        if(containsUseOf(&instOfBB, I)){
-            return true;
-        }
+        // if(&instOfBB==I && selfFlag){return false;}
+        if(containsUseOf(&instOfBB, I)){return true;}
     }
     visitedBlockSet.insert(BB);
     for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
-        if(usedAfterDFS(I, I_current, BB->getTerminator()->getSuccessor(i), visitedBlockSet)){return true;}
+        if(usedAfterDFS(I, I_current, BB->getTerminator()->getSuccessor(i), visitedBlockSet, selfFlag)){return true;}
     }
     return false;
 }
-static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
+static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=false){
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
     while(walkerInst != localTerm){
+        // if(walkerInst==I && selfFlag){return false;}
         if(containsUseOf(walkerInst, I)){return true;}
         walkerInst = walkerInst->getNextNode();
     }
     set<BasicBlock*> visitedBlockSet;
     for(int i = 0; i < localTerm->getNumSuccessors(); i++){
-        if(usedAfterDFS(I, I_current, localTerm->getSuccessor(i), visitedBlockSet)){return true;}
+        if(usedAfterDFS(I, I_current, localTerm->getSuccessor(i), visitedBlockSet, selfFlag)){return true;}
     }
     return false;
 }
 static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
     vector<Instruction*> searchList;
-    searchList.push_back(I);
+    // searchList.push_back(I);
     for(User *user : I->users()){
         if(CastInst *CI = dyn_cast<CastInst>(user)){
             if(CI->getName().startswith(tempPrefix)){
@@ -120,10 +122,9 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix)
             }
         }
     }
+    if(_usedAfter(I, I_current, tempPrefix, false)){return true;}
     for(Instruction *searchI : searchList){
-        if(_usedAfter(searchI, I_current, tempPrefix)){
-            return true;
-        }
+        if(_usedAfter(searchI, I_current, tempPrefix)){return true;}
     }
     return false;
 }
@@ -381,12 +382,13 @@ public:
         }
         IRBuilder<> Builder(InsertBefore);
         if(Backend->stackMap.count(IOnReg)==0){
-            AllocaInst *loadOperand = Builder.CreateAlloca(
+            IRBuilder<> entryBuilder(InsertBefore->getFunction()->getEntryBlock().getFirstNonPHI());
+            AllocaInst *loadOperand = entryBuilder.CreateAlloca(
                 IOnReg->getType(),
                 nullptr,
                 Backend->tempPrefix+"_ltf_"+IOnReg->getName()
             );
-             Backend->stackMap[IOnReg] = loadOperand;
+            Backend->stackMap[IOnReg] = loadOperand;
         }
         Builder.CreateStore(
             IOnReg,
@@ -654,6 +656,7 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
         loadOperands(&I, evicRegs, operandOnRegs);
         putOnRegs(&I, evicRegs, operandOnRegs);
     }
+    // outs()<<BB;
     vector<Instruction*> finalRegs = regs->getRegs();
     IRBuilder<> termBuilder(BB.getTerminator());
     for(int i = 0; i < REG_SIZE; i++){
@@ -718,11 +721,11 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
         nullptr,
         tempPrefix+"pos_tmep_"+PI->getName()
     );
-    // AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
-    //     phiType,
-    //     nullptr,
-    //     tempPrefix+"pos_real_"+PI->getName()
-    // );
+    AllocaInst *phiRealValOnStack = entryBuilder.CreateAlloca(
+        phiType,
+        nullptr,
+        tempPrefix+"pos_real_"+PI->getName()
+    );
     for(int i = 0; i < PI->getNumIncomingValues(); i++){
         Value* inValue = PI->getIncomingValue(i);
         BasicBlock* inBlock = PI->getIncomingBlock(i);
@@ -735,16 +738,16 @@ Instruction *LessSimpleBackend::depPhi(PHINode *PI){
     IRBuilder<> PIBuilder(PI);
     Instruction* updateCarrierDep = PIBuilder.CreateLoad(
         phiTempValOnStack,
-        PI->getName()
+        PI->getName()+"_carrier"
     );
-    // Instruction* updateCarrierArr = PIBuilder.CreateStore(
-    //     updateCarrierDep,
-    //     phiRealValOnStack
-    // );
-    return updateCarrierDep;
+    Instruction* updateCarrierArr = PIBuilder.CreateStore(
+        updateCarrierDep,
+        phiRealValOnStack
+    );
+    return phiRealValOnStack;
 }
 
-void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *newPI){
+void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
     Function *F = PI->getParent()->getParent();
     vector<pair<Instruction *, int>> newLoadList;
     vector<pair<Instruction *, int>> undefList;
@@ -764,12 +767,12 @@ void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *newPI){
         }
     }
     for(auto iter : newLoadList){
-        // IRBuilder<> Builder(iter.first);
-        // LoadInst *loadRealVal = Builder.CreateLoad(
-        //     realValPos,
-        //     PI->getName()+"_val"
-        // );
-        iter.first->setOperand(iter.second, newPI);
+        IRBuilder<> Builder(iter.first);
+        LoadInst *loadRealVal = Builder.CreateLoad(
+            realValPos,
+            PI->getName()+"_val"
+        );
+        iter.first->setOperand(iter.second, loadRealVal);
     }
     for(auto iter : undefList){
         iter.first->setOperand(iter.second, UndefValue::get(PI->getType()));
@@ -796,25 +799,52 @@ void LessSimpleBackend::depPhi(Function &F){
         Instruction *realValPos = iter.second;
         __depPhi(PI, realValPos);
     }
+    // for(PHINode *PI : phiList){
+    //     IRBuilder<> entryBuilder(F.getEntryBlock().getFirstNonPHI());
+    //     IRBuilder<> Builder(PI);
+    //     AllocaInst *phiPos = entryBuilder.CreateAlloca(
+    //         PI->getType(),
+    //         nullptr,
+    //         tempPrefix+"pos_"+PI->getName()
+    //     );
+    //     LoadInst *newPI = Builder.CreateLoad(
+    //         phiPos,
+    //         PI->getName()
+    //     );
+    //     for(int i = 0; i < PI->getNumIncomingValues(); i++){
+    //         Value* inValue = PI->getIncomingValue(i);
+    //         BasicBlock* inBlock = PI->getIncomingBlock(i);
+    //         IRBuilder<> blockBuilder(inBlock->getTerminator());
+    //         Instruction *storePI = blockBuilder.CreateStore(
+    //             inValue,
+    //             phiPos
+    //         );
+    //     }
+    //     PI->replaceAllUsesWith(newPI);
+    //     removeInst(PI);
+    // }
 }
 
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
-    for(int i = 1; i < GEPI->getNumOperands(); i++){
-        Value *operandV = GEPI->getOperand(i);
-        if(CastInst *CI = dyn_cast<CastInst>(operandV)){
-            operandV = unCast(CI);
-        }
-        if(Constant *C = dyn_cast<Constant>(operandV)){
-        }else{
-            return;
-        }
-    }
     Value *ptr = GEPI->getOperand(0);
     if(CastInst *CI = dyn_cast<CastInst>(ptr)){
         ptr = unCast(CI);
     }
     if(dyn_cast<AllocaInst>(ptr) ||
         dyn_cast<Constant>(ptr)){
+        if(ptr->hasName() && !(ptr->getName().startswith(tempPrefix))){
+            return;
+        }
+        for(int i = 1; i < GEPI->getNumOperands(); i++){
+            Value *operandV = GEPI->getOperand(i);
+            if(CastInst *CI = dyn_cast<CastInst>(operandV)){
+                operandV = unCast(CI);
+            }
+            if(Constant *C = dyn_cast<Constant>(operandV)){
+            }else{
+                return;
+            }
+        }
         GEPI->setName(tempPrefix + GEPI->getName());
     }
 }
@@ -983,8 +1013,10 @@ void LessSimpleBackend::depromoteReg(Function &F){
     frame = new LessSimpleBackend::StackFrame(&F, this);
     depCast(F);
     depPhi(F);
+    // outs()<<F;
     depGEP(F);
-    regAlloc(F); 
+    regAlloc(F);
+    // outs()<<F; 
     depAlloca(F);
     insertRst(F);
     placeSpSub(F);
@@ -1017,6 +1049,10 @@ void LessSimpleBackend::buildGVMap(){
 PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     if (verifyModule(M, &errs(), nullptr)){
         exit(1);
+    }
+
+    if(printDepromotedModule){
+        outs() << M;
     }
 
     // First, name all instructions / arguments / etc.
@@ -1072,7 +1108,10 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
         }
     }
 
-    // outs() << M;
+    if(printDepromotedModule){
+        outs() << M;
+    }
+
 
     // Now, let's emit assembly!
     vector<std::string> dummyFunctionName = {

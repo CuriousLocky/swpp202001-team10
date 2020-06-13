@@ -157,6 +157,7 @@ public:
   string spSubName;
   string spOffsetName;
   string tempPrefix;
+  llvm::raw_ostream *fout;
 
 private:
   // For resolving bit_cast_ptr and offset
@@ -254,14 +255,14 @@ private:
         checkRegisterType(I);
         return { getRegisterNameFromInstruction(I, tempPrefix), -1 };
       }
-      else if (nameOffsetMap.find(I->getName().str()) != nameOffsetMap.end()) {
+      else if (nameOffsetMap.count(I->getName().str())) {
         int offset = nameOffsetMap.at(I->getName().str());
         return { "sp", offset };
       }
-      else if (castDestReg.count(I->getName().str()) > 0) {
+      else if (castDestReg.count(I->getName().str())) {
         return { castDestReg.at(I->getName().str()), -1 };
       }
-      else if (ptrResolver.count(I->getName().str()) > 0) {
+      else if (ptrResolver.count(I->getName().str())) {
         auto tmp = ptrResolver.at(I->getName().str());
         return { tmp.first, tmp.second };
       }
@@ -275,14 +276,36 @@ private:
       else if (starts_with(I->getName().str(), tempPrefix)) {
       /* If this is an instruction start with temp and not resolved in
       nameOffsetMap or castDestReg, then  */
-        auto [DestReg, offset] = getOperand(I->getOperand(0));
-        assert(starts_with(DestReg, "arg") || starts_with(DestReg, "r"));
-        if (offset != -1) {
-          nameOffsetMap.try_emplace(I->getName().str(), offset);
-        } else {
-          castDestReg.try_emplace(I->getName().str(), DestReg);
+        if(dyn_cast<CastInst>(I)){
+          return getOperand(I->getOperand(0));
         }
-        return {DestReg, offset};
+        if(CallInst *CI = dyn_cast<CallInst>(I)){
+          visitCallInst(*CI);
+          return getOperand(I);
+        }
+        raiseError("Unresolved!", I);
+        // raiseError("Unresolved!", I);
+        // // limbo from here
+        // auto [DestReg, offset] = getOperand(I->getOperand(0));
+        // if(!(starts_with(DestReg, "arg") || starts_with(DestReg, "r"))) {
+        //   for (unsigned i = 0; i < FnBody.size(); ++i) {
+        //     assert(FnBody[i].size() > 0);
+        //     if (FnBody[i][0] == '.')
+        //       // Basic block
+        //       errs() << "\n  " << FnBody[i] << "\n";
+
+        //     else
+        //       // Instruction
+        //       errs() << "    " << FnBody[i] << "\n";
+        //   }
+        //   raiseError("Unresolved!", I);
+        // }
+        // if (offset != -1) {
+        //   nameOffsetMap.try_emplace(I->getName().str(), offset);
+        // } else {
+        //   castDestReg.try_emplace(I->getName().str(), DestReg);
+        // }
+        // return {DestReg, offset};
       }
       else {
         assert(false && "Unknown instruction type!");
@@ -308,12 +331,13 @@ void getSize(vector<unsigned> &indices, ArrayType *arr) {
 }
 
 public:
-  AssemblyEmitterImpl(std::vector<std::string> dummyFunctionName):
+  AssemblyEmitterImpl(std::vector<std::string> dummyFunctionName, llvm::raw_ostream *fout):
     resetHeapName(dummyFunctionName[0]),
     resetStackName(dummyFunctionName[1]),
     spOffsetName(dummyFunctionName[2]),
     spSubName(dummyFunctionName[3]),
-    tempPrefix(dummyFunctionName[4])
+    tempPrefix(dummyFunctionName[4]),
+    fout(fout)
    {}
 
   void visitFunction(Function &F) {
@@ -747,7 +771,7 @@ public:
 };
 
 void NewAssemblyEmitter::run(Module *DepromotedM) {
-  AssemblyEmitterImpl Em(dummyFunctionName);
+  AssemblyEmitterImpl Em(dummyFunctionName, fout);
   unsigned TotalStackUsage = 0;
   for (auto &F : *DepromotedM) {
     if (F.isDeclaration())
