@@ -18,7 +18,9 @@ sf-compiler-tests: $(OBJ_TEST)
 
 test: sf-compiler-tests
 	@./sf-compiler-tests
-	@./run-filechecks.sh $(FILECHECK_PATH)
+	# @./run-filechecks.sh $(FILECHECK_PATH)
+	@./run-test.sh all ./sf-interpreter
+	@rm *.log
 
 obj/LessSimpleBackend.o: src/LessSimpleBackend.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
