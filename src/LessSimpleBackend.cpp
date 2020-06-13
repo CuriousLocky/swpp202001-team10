@@ -86,7 +86,7 @@ static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix
     }
     return false;
 }
-static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix){
+static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=true){
     vector<Instruction*> searchList;
     // searchList.push_back(I);
     for(User *user : I->users()){
@@ -96,7 +96,7 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix)
             }
         }
     }
-    if(_usedAfter(I, I_current, tempPrefix, true)){return true;}
+    if(_usedAfter(I, I_current, tempPrefix, selfFlag)){return true;}
     for(Instruction *searchI : searchList){
         if(_usedAfter(searchI, I_current, tempPrefix)){return true;}
     }
@@ -187,7 +187,7 @@ class LessSimpleBackend::StackFrame{
             if(frame[i].first == nullptr){
                 continue;
             }
-            if(!usedAfter(frame[i].first, I_current, Backend->getTempPrefix())){
+            if(!usedAfter(frame[i].first, I_current, Backend->getTempPrefix(), false)){
                 frame[i].first = nullptr;
             }
         }
@@ -230,7 +230,7 @@ public:
                         frame.insert(frame.begin()+i+1, pair(nullptr, emptySize-size));
                     }
                     if(emptyBegin > offset){
-                        frame.insert(frame.begin()+i-1, pair(nullptr, emptyBegin-offset));
+                        frame.insert(frame.begin()+i, pair(nullptr, emptyBegin-offset));
                     }
                     onStackFlag = true;
                     offset = emptyBegin;
@@ -270,6 +270,7 @@ public:
             if(iter.first!=nullptr){
                 eleName = iter.first->getName();
             }
+            outs()<<to_string(offset)<<": "<<eleName+" "<<"\n";
             offset += iter.second;
         }
     }
@@ -611,7 +612,6 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
         loadOperands(&I, evicRegs, operandOnRegs);
         putOnRegs(&I, evicRegs, operandOnRegs);
     }
-    // outs()<<BB;
     vector<Instruction*> finalRegs = regs->getRegs();
     IRBuilder<> termBuilder(BB.getTerminator());
     for(int i = 0; i < REG_SIZE; i++){
