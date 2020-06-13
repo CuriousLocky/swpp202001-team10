@@ -19,6 +19,7 @@ sf-compiler-tests: $(OBJ_TEST)
 test: sf-compiler-tests
 	@./sf-compiler-tests
 	# @./run-filechecks.sh $(FILECHECK_PATH)
+	@./chmod +x ./run-test.sh ./sf-compiler ./sf-interpreter
 	@./run-test.sh all ./sf-interpreter
 	@rm *.log
 
