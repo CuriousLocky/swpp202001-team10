@@ -89,7 +89,7 @@ static bool usedAfterDFS(
     set<BasicBlock*> &visitedBlockSet, bool selfFlag){
     if(visitedBlockSet.count(BB)){return false;}
     for(Instruction &instOfBB : BB->getInstList()){
-        // if(&instOfBB==I && selfFlag){return false;}
+        if(&instOfBB==I && selfFlag){return false;}
         if(containsUseOf(&instOfBB, I)){return true;}
     }
     visitedBlockSet.insert(BB);
@@ -102,7 +102,7 @@ static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
     while(walkerInst != localTerm){
-        // if(walkerInst==I && selfFlag){return false;}
+        if(walkerInst==I && selfFlag){return false;}
         if(containsUseOf(walkerInst, I)){return true;}
         walkerInst = walkerInst->getNextNode();
     }
@@ -122,7 +122,7 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix)
             }
         }
     }
-    if(_usedAfter(I, I_current, tempPrefix, false)){return true;}
+    if(_usedAfter(I, I_current, tempPrefix, true)){return true;}
     for(Instruction *searchI : searchList){
         if(_usedAfter(searchI, I_current, tempPrefix)){return true;}
     }
@@ -518,11 +518,35 @@ void LessSimpleBackend::loadOperands(
                     relatedInstMap[operand_I] = I->getOperand(i);
                 }
             }
+            // if(TruncInst *TI = dyn_cast<TruncInst>(I->getOperand(i))){
+            //     outs()<<*I<<"\n";
+            //     outs()<<*TI<<"\n";
+            //     outs()<<*operand<<"\n";
+            //     outs()<<"\n";
+            // }
         }
         for(Instruction *relatedInst : relatedInstList){
             int regNum = regs->findOnRegs(relatedInst);
             if(regNum > 0){
                 operandOnRegs.push_back(regNum);
+                if(!relatedInst->getName().startswith("r"+to_string(regNum)+"_")){
+                    IRBuilder<> Builder(I);
+                    Instruction *regSwArg = relatedInst;
+                    if(relatedInst->getType()!=Type::getInt64Ty(I->getContext())){
+                        regSwArg = getCastInst(relatedInst, Type::getInt64Ty(I->getContext()), I);
+                        regSwArg->setName(tempPrefix+relatedInst->getName()+"_cast");
+                    }
+                    CallInst *relocatedReg = Builder.CreateCall(
+                        regSwitch, {regSwArg},
+                        regs->genRegName(relatedInst, regNum)
+                    );
+                    Instruction *newOperand = relocatedReg;
+                    if(relocatedReg->getType()!=relatedInstMap[relatedInst]->getType()){
+                        newOperand = getCastInst(relocatedReg, relatedInstMap[relatedInst]->getType(), I);
+                        newOperand->setName(tempPrefix+relocatedReg->getName()+"_cast");
+                    }
+                    I->replaceUsesOfWith(relatedInstMap[relatedInst], newOperand);
+                }
                 continue;
             }
             if(stackMap.count(relatedInst)){
@@ -780,10 +804,11 @@ void LessSimpleBackend::__depPhi(PHINode *PI, Instruction *realValPos){
     removeInst(PI);
 }
 
-void LessSimpleBackend::depPhi(Function &F){
+set<Instruction*> LessSimpleBackend::depPhi(Function &F){
     vector<PHINode*> phiList;
     map<PHINode*, Instruction*> phiMap;
     map<PHINode*, set<BasicBlock*>> phiUseBlockMap;
+    set<Instruction*> newPhiSet;
     for(BasicBlock &BB : F){
         for(Instruction &I : BB){
             if(PHINode *PI = dyn_cast<PHINode>(&I)){
@@ -791,38 +816,52 @@ void LessSimpleBackend::depPhi(Function &F){
             }
         }
     }
-    for(PHINode *PI : phiList){
-        phiMap[PI] = depPhi(PI);
-    }
-    for(auto iter : phiMap){
-        PHINode *PI = iter.first;
-        Instruction *realValPos = iter.second;
-        __depPhi(PI, realValPos);
-    }
     // for(PHINode *PI : phiList){
-    //     IRBuilder<> entryBuilder(F.getEntryBlock().getFirstNonPHI());
-    //     IRBuilder<> Builder(PI);
-    //     AllocaInst *phiPos = entryBuilder.CreateAlloca(
-    //         PI->getType(),
-    //         nullptr,
-    //         tempPrefix+"pos_"+PI->getName()
-    //     );
-    //     LoadInst *newPI = Builder.CreateLoad(
-    //         phiPos,
-    //         PI->getName()
-    //     );
-    //     for(int i = 0; i < PI->getNumIncomingValues(); i++){
-    //         Value* inValue = PI->getIncomingValue(i);
-    //         BasicBlock* inBlock = PI->getIncomingBlock(i);
-    //         IRBuilder<> blockBuilder(inBlock->getTerminator());
-    //         Instruction *storePI = blockBuilder.CreateStore(
-    //             inValue,
-    //             phiPos
-    //         );
-    //     }
-    //     PI->replaceAllUsesWith(newPI);
-    //     removeInst(PI);
+    //     phiMap[PI] = depPhi(PI);
     // }
+    // for(auto iter : phiMap){
+    //     PHINode *PI = iter.first;
+    //     Instruction *realValPos = iter.second;
+    //     __depPhi(PI, realValPos);
+    // }
+    for(PHINode *PI : phiList){
+        IRBuilder<> entryBuilder(F.getEntryBlock().getFirstNonPHI());
+        IRBuilder<> Builder(PI);
+        AllocaInst *phiPos = entryBuilder.CreateAlloca(
+            PI->getType(),
+            nullptr,
+            tempPrefix+"pos_"+PI->getName()
+        );
+        LoadInst *newPI = Builder.CreateLoad(
+            phiPos,
+            PI->getName()
+        );
+        for(int i = 0; i < PI->getNumIncomingValues(); i++){
+            Value* inValue = PI->getIncomingValue(i);
+            BasicBlock* inBlock = PI->getIncomingBlock(i);
+            IRBuilder<> blockBuilder(inBlock->getTerminator());
+            Instruction *storePI = blockBuilder.CreateStore(
+                inValue,
+                phiPos
+            );
+        }
+        PI->replaceAllUsesWith(newPI);
+        removeInst(PI);
+        newPhiSet.insert(newPI);
+    }
+    return newPhiSet;
+}
+
+void LessSimpleBackend::phiUpdatePatch(set<Instruction*> &newPhiSet){
+    for(Instruction* newPhi : newPhiSet){
+        if(stackMap.count(newPhi)==0){continue;}
+        StoreInst *phiUpdateInst = new StoreInst(
+            newPhi,
+            stackMap[newPhi],
+            newPhi->getNextNode()
+        );
+        // outs()<<*newPhi->getParent();
+    }
 }
 
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
@@ -1005,6 +1044,58 @@ void LessSimpleBackend::insertRst(Function &F){
     }
 }
 
+static Instruction* delayAllocaDFS(AllocaInst *AI, set<BasicBlock*> visitedBB, BasicBlock *BB = nullptr){
+    // BasicBlock *BB = AI->getParent();
+    if(BB==nullptr){BB=AI->getParent();}
+    if(visitedBB.count(BB)){return nullptr;}
+    for(Instruction &I : BB->getInstList()){
+        if(containsUseOf(&I, AI)){return &I;}
+    }
+    visitedBB.insert(BB);
+    Instruction *result = nullptr;
+    for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
+        Instruction *childResult = delayAllocaDFS(AI, visitedBB, BB->getTerminator()->getSuccessor(i));
+        if(childResult!=nullptr){
+            if(result == nullptr){
+                result = childResult;
+            }else{
+                return BB->getTerminator();
+            }
+        }
+    }
+    return result;
+}
+
+static void _delayAlloca(AllocaInst *AI){
+    set<BasicBlock*> visitedBB;
+    Instruction *latestSafePos = delayAllocaDFS(AI, visitedBB);
+    IRBuilder<> Builder(latestSafePos);
+    AllocaInst *newAlloca = Builder.CreateAlloca(
+        AI->getAllocatedType(),
+        AI->getArraySize(),
+        AI->getName()
+    );
+    AI->replaceAllUsesWith(newAlloca);
+    AI->removeFromParent();
+    AI->deleteValue();
+}
+
+void LessSimpleBackend::delayAlloca(Function &F){
+    vector<AllocaInst*> allocaInstList;
+    for(BasicBlock &BB : F){
+        for(Instruction &I : BB){
+            if(AllocaInst *AI = dyn_cast<AllocaInst>(&I)){
+                if(AI->getName().startswith(tempPrefix)){
+                    allocaInstList.push_back(AI);
+                }
+            }
+        }
+    }
+    for(AllocaInst *AI : allocaInstList){
+        _delayAlloca(AI);
+    }
+}
+
 void LessSimpleBackend::depromoteReg(Function &F){
     for(int i = 1; i <= F.arg_size(); i++){
         renameArg(*F.getArg(i-1), i);
@@ -1012,11 +1103,12 @@ void LessSimpleBackend::depromoteReg(Function &F){
     regs = new LessSimpleBackend::Registers(&F, this);
     frame = new LessSimpleBackend::StackFrame(&F, this);
     depCast(F);
-    depPhi(F);
+    auto newPhiSet = depPhi(F);
     // outs()<<F;
     depGEP(F);
     regAlloc(F);
     // outs()<<F;
+    delayAlloca(F);
     depAlloca(F);
     insertRst(F);
     placeSpSub(F);
@@ -1051,10 +1143,6 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
         exit(1);
     }
 
-    if(printDepromotedModule){
-        outs() << M;
-    }
-
     // First, name all instructions / arguments / etc.
     InstNamer Namer;
     Namer.visit(M);
@@ -1067,8 +1155,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     string rstSName = getUniqueFnName("__resetStack", M);
     string spOffsetName = getUniqueFnName("__spOffset", M);
     string spSubName = getUniqueFnName("__spSub", M);
-    // TODO: add a name here!!
-    string regSwitchName = getUniqueFnName("", M);
+    string regSwitchName = getUniqueFnName("__regSwtich", M);
 
     Type *VoidTy = Type::getVoidTy(M.getContext());
     PointerType *I8PtrTy = PointerType::getInt8PtrTy(M.getContext());
@@ -1077,6 +1164,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     FunctionType *rstTy = FunctionType::get(VoidTy, {}, false);
     FunctionType *spOffsetTy = FunctionType::get(I8PtrTy, {I64Ty}, false);
     FunctionType *spSubTy = FunctionType::get(VoidTy, {I64Ty}, false);
+    FunctionType *regSwitchTy = FunctionType::get(I64Ty, {I64Ty}, false);
 
     tempPrefix = getUniquePrefix("temp_p_", M);
 
@@ -1084,7 +1172,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     rstS = Function::Create(rstTy, Function::ExternalLinkage, rstSName, M);
     spOffset = Function::Create(spOffsetTy, Function::ExternalLinkage, spOffsetName, M);
     spSub = Function::Create(spSubTy, Function::ExternalLinkage, spSubName, M);
-    // TODO: add regSwitch function here!
+    regSwitch = Function::Create(regSwitchTy, Function::ExternalLinkage, regSwitchName, M);
 
     malloc = nullptr;
     main = nullptr;

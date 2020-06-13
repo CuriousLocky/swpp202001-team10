@@ -23,6 +23,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   std::string tempPrefix;
   bool printDepromotedModule;
   std::map<llvm::Instruction*, llvm::Value*> stackMap;
+  // std::set<llvm::Instruction*> newPhiSet;
   //std::map<llvm::Instruction*, llvm::Instruction*> stackMapRev;
   llvm::Function *spOffset;
   llvm::Function *spSub;
@@ -30,6 +31,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   llvm::Function *rstS;
   llvm::Function *malloc;
   llvm::Function *main;
+  llvm::Function *regSwitch;
   std::map<llvm::Value*, unsigned int> globalVarMap;
   class Registers;
   class StackFrame;
@@ -61,10 +63,12 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void depCast(llvm::Function &F);
   llvm::Instruction *depPhi(llvm::PHINode *PI);
   void __depPhi(llvm::PHINode *PI, llvm::Instruction *realValPos);
-  void depPhi(llvm::Function &F);
+  std::set<llvm::Instruction*> depPhi(llvm::Function &F);
+  void phiUpdatePatch(std::set<llvm::Instruction*> &newPhiSet);
   void depGEP(llvm::GetElementPtrInst *GEPI);
   void depGEP(llvm::Function &F);
   void depGV();
+  void delayAlloca(llvm::Function &F);
   int insertRst(llvm::BasicBlock &BB);
   void insertRst_first(
     llvm::BasicBlock &BB,

@@ -317,6 +317,7 @@ private:
     else {
       assert(false && "Unknown value type!");
     }
+    assert(false && "Uncatched error!");
   }
 
 void getSize(vector<unsigned> &indices, ArrayType *arr) {
@@ -628,6 +629,7 @@ public:
       } else {
         castDestReg.emplace(TI.getName().str(), Op1);
       }
+      return;
     }
     raiseError("Not truncing an instruction, what are you doing", &TI);
   }
