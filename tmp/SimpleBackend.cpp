@@ -182,10 +182,10 @@ public:
     string resetHeapName = getUniqueName("resetHeap", M);
     string resetStackName = getUniqueName("resetStack", M);
 
-    FunctionType *resetHeapTy = FunctionType::get(VoidTy, {VoidTy}, false);
+    FunctionType *resetHeapTy = FunctionType::get(VoidTy, {}, false);
     resetHeapFn = Function::Create(resetHeapTy, Function::ExternalLinkage, resetHeapName, *ModuleToEmit);
 
-    FunctionType *resetStackTy = FunctionType::get(VoidTy, {VoidTy}, false);
+    FunctionType *resetStackTy = FunctionType::get(VoidTy, {}, false);
     resetStackFn = Function::Create(resetStackTy, Function::ExternalLinkage, resetStackName, *ModuleToEmit);
 
     uint64_t GVOffset = 20480;
@@ -683,9 +683,9 @@ static void insertReset(BasicBlock &B, AllocType lastVisit, Function* rstH, Func
         builder.CreateCall(rstS, {});
       }else if(nowVisit==HEAP){
         builder.CreateCall(rstH, {});
-      }      
+      }
     }
-    lastVisit = nowVisit;       
+    lastVisit = nowVisit;
   }
   for(int i = 0; i < B.getTerminator()->getNumSuccessors(); i++){
     insertReset(*B.getTerminator()->getSuccessor(i), lastVisit, rstH, rstS, BBMap);

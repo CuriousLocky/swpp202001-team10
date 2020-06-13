@@ -18,9 +18,9 @@ using namespace std;
         BinaryOperator * Inst;
         ConstantInt* C;
         uint64_t a;
-        
+
         switch(I.getOpcode()){
-          
+
           case Instruction::Shl:
             // assuming 0 << 0 won't occure since it's been already removed by
             // constant folding opt
@@ -52,7 +52,7 @@ using namespace std;
             }
             break;
           //case Instruction::LShr:
-          case Instruction::AShr: 
+          case Instruction::AShr:
             // assuming 0 >> 0 won't occure since it's been already removed by
             // constant folding opt
             // X >> 0
@@ -111,7 +111,7 @@ using namespace std;
                 I.replaceAllUsesWith(I.getOperand(0));
                 removableInst.push_back(&I);
               }
-            } 
+            }
             break;
 
           case Instruction::Sub:
@@ -166,7 +166,7 @@ using namespace std;
                 break;
               }
             }
-            
+
 
             // X / 1
             if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
@@ -180,7 +180,7 @@ using namespace std;
 
             case Instruction::SRem:
             case Instruction::URem:
-              
+
               // X % X
               if(I.getOperand(0) == I.getOperand(1)){
               C  = ConstantInt::get( I.getOperand(0)->getContext(), APInt(32, StringRef("0"), 10));
@@ -198,7 +198,7 @@ using namespace std;
                   break;
                 }
               }
-              
+
               // X % 1
               if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
                 a = C->getZExtValue();
@@ -225,14 +225,14 @@ using namespace std;
                   break;
                 }
               }
-            
+
               // X | 0
               if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(0));
                   removableInst.push_back(&I);
-                  
+
                 }
               }
               break;
@@ -252,14 +252,14 @@ using namespace std;
                   break;
                 }
               }
-            
+
               // X & 0
               if((C = dyn_cast<ConstantInt>(I.getOperand(1)))){
                 a = C->getZExtValue();
                 if(a == 0){
                   I.replaceAllUsesWith(I.getOperand(1));
                   removableInst.push_back(&I);
-                  
+
                 }
               }
               break;
@@ -279,4 +279,3 @@ using namespace std;
       I->eraseFromParent();
     return PreservedAnalyses::all();
   }
-

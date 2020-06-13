@@ -17,10 +17,10 @@ data = {}
 c = contents[0]
 for line in c:
     if line.startswith('#'):
-        test = re.search("^[\#]{4}\s(.*)\s[\#]{4}$", line).group(1)
+        test = re.search("^[ #]{4} (.*) [ #]{4}$", line).group(1)
         data[test] = {}
     if line.startswith('='):
-        curr_input = re.search("^={2}\s(.*)\s={2}$", line).group(1)
+        curr_input = re.search("^={2} (.*) ={2}$", line).group(1)
         data[test][curr_input] = {}
     if line.startswith('Cost: '):
         cost = float(line[6:])
@@ -32,16 +32,16 @@ for line in c:
 c = contents[1]
 for line in c:
     if line.startswith('#'):
-        test = re.search("^[\#]{4}\s(.*)\s[\#]{4}$", line).group(1)
+        test = re.search("^[ #]{4} (.*) [ #]{4}$", line).group(1)
     if line.startswith('='):
-        curr_input = re.search("^={2}\s(.*)\s={2}$", line).group(1)
+        curr_input = re.search("^={2} (.*) ={2}$", line).group(1)
     if line.startswith('Cost: '):
         cost = float(line[6:])
         old_cost = data[test][curr_input]['cost']
         data[test][curr_input]['cost'] = (old_cost - cost)/old_cost
     if line.startswith('Max heap usage (bytes): '):
         heap = float(line[len('Max heap usage (bytes): '):])
-        old_heap = data[test][curr_input]['heapUsage'] 
+        old_heap = data[test][curr_input]['heapUsage']
         if old_heap - heap == 0:
             data[test][curr_input]['heapUsage'] = 0.0
         else:
