@@ -51,8 +51,8 @@ using namespace std;
               }
             }
             break;
-          //case Instruction::LShr:
-          case Instruction::AShr:
+          case Instruction::LShr:
+          // case Instruction::AShr:
             // assuming 0 >> 0 won't occure since it's been already removed by
             // constant folding opt
             // X >> 0
