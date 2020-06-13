@@ -30,7 +30,7 @@ This is the requirement and specification document for Team 10 that describes th
     - [Unfinished from Sprint 2: Backend rework (Register allocation)](#unfinished-from-sprint-2-backend-rework-register-allocation)
     - [Unfinished from Sprint 1: `malloc` to `alloca`](#unfinished-from-sprint-1-malloc-to-alloca-1)
     - [Optimizing Pass order](#optimizing-pass-order)
-    - [Bug fix: `GVN` not working](#bug-fix-gvn-not-working)
+  - [Wrap-up Period](#wrap-up-period)
     - [Existing LLVM optimization](#existing-llvm-optimization-1)
 
 ## Sprint 1 Optimization
@@ -61,7 +61,8 @@ end
 #### Example IR
 
 **Case 1**: `shift` to `mul`/`div`
-``` llvm
+
+```llvm
 %1 = shl  %a, 1, 32 ;before
 %1 = mul  %a, 2, 32 ;after
 %2 = ashr %b, 1, 32 ;before
@@ -70,13 +71,13 @@ end
 
 **Case 2**: `add`/`sub` val with val's multiplicands to `mul`
 
-``` llvm
+```llvm
 %1 = add  %a, %a, 32 ;before
 %1 = mul  %a, 2,  32 ;after
 ```
 **Case 3**: `add`/`sub` with zero to `mul`
 
-``` llvm
+```llvm
 %1 = add  %a, 0,  32 ;before
 %1 = mul  %a, 1,  32 ;after
 %2 = sub  %b, 0,  32 ;before
@@ -92,6 +93,8 @@ end
 The SWPP machine has a tape-like memory with no random access support. Therefore, the cost of moving along the tape is considerable, especially whilst accessing heap memory and stack memory interleavingly.
 
 However, there's a `reset [stack|heap]` instruction provided, with a fixed cost of `2`, which is equivalent to moving the tap-access head a disteance of `5000`. Since the distance between `10240` (stack starting address) and `20480` (heap starting address) is obviously larger than `5000`, it would always be more efficient to `reset` when you want to access heap after stack (or vice versa).
+
+<font color="red"><b>Update: </b></font> This function is integrated into the new backend.
 
 #### Algorithmic Implementation
 
@@ -359,7 +362,7 @@ Existing optimization to be integrated in Sprint 1:
 
 #### Description
 
-The provided simplebackend works in a way that it allocates everything on the stack first and then uses registers as "cache" for other operations. This is not very efficient and affects the performance massively. A redesigned backend that puts local variables directly on registers will work better. 
+The provided simplebackend works in a way that it allocates everything on the stack first and then uses registers as "cache" for other operations. This is not very efficient and affects the performance massively. A redesigned backend that puts local variables directly on registers will work better.
 
 #### Algorithmic Implementation
 
@@ -395,9 +398,9 @@ Existing optimization to be integrated in Sprint 2:
 
 ### Optimizing Pass order
 
-Some Passes are doing "cleaning up" work and thus should be registered 
+Some Passes are doing "cleaning up" work and thus should be registered at the end of `main.cpp`.
 
-### Bug fix: `GVN` not working
+## Wrap-up Period
 
 ### Existing LLVM optimization
 

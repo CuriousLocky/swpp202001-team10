@@ -12,7 +12,7 @@ Optimizations that can be represented as composition of smaller optimizations ar
 #### 2. Reordering memory accesses
 - If there is a heap access after a stack access, inserting ‘reset heap’ will be helpful.
 - Reordering memory accesses will be helpful, if we know all of their locations, to minimize the head's traveling cost.
-- We should (1) Minimize alternation between heap accesses and stack accesses (2) Reorder allocations so traversal becomes as linear as possible
+- We should (1) Minimize alternation between heap accesses and stack accesses(2) Reorder allocations so traversal becomes as linear as possible
 
 #### 3. Register allocation
 - In LLVM, register allocation is done in much lower level; so there is no library in IR that is usable in this project.
@@ -20,7 +20,7 @@ Optimizations that can be represented as composition of smaller optimizations ar
 
     (1) It converts all IR registers into alloca; read/write to the IR register becomes load/store to the alloca.
     The newly created allocas have suffix `_slot`.
-    
+
     (2) After transformation, LHS of all instructions contain the name of assembly register to use:
     `__r1__2 = add i64 __r2__, __r1__` describes addition of registers r1, r2 and assigns the result to r2 again.
 
@@ -57,7 +57,7 @@ You can call Function/Loop/ModulePassManager.addPass(PassName()) at main.cpp to 
 https://godbolt.org/z/FiPXm3
 
 You can either:
-- Use an existing pass: TailCallElimPass, include/llvm/Transforms/Scalar/TailRecursionElimination.h ;  
+- Use an existing pass: TailCallElimPass, include/llvm/Transforms/Scalar/TailRecursionElimination.h ;
 - Or you can implement it by yourself (e.g. if the pass does not consider some cases). It won’t be a discount in your grade.
 
 #### 9. Inlining:
@@ -78,7 +78,7 @@ Please set InsertLifetime to false. It is not needed.)
 - Or you can implement it by yourself!
 
 #### 10. Lowering Allocas to IR registers
-https://godbolt.org/z/UUTBHm 
+https://godbolt.org/z/UUTBHm
 
 - We’ll give an IR program that already has allocas lowered into assembly if possible. However, it will still have many loads/stores which can be optimized.
 - If you want to do this transformation for some purpose,
@@ -90,7 +90,7 @@ void PromoteMemToReg(ArrayRef<AllocaInst *> Allocas, DominatorTree &DT,
 ```
 
 #### 11. Loop unrolling:
-https://godbolt.org/z/EjVmTc 
+https://godbolt.org/z/EjVmTc
 
 - LoopUnrollPass , include/llvm/Transforms/Scalar/LoopUnrollPass.h
 - However, I suggest you to implement it by yourself rather than using existing pass;
@@ -106,7 +106,7 @@ https://godbolt.org/z/fTvKGW
 - SimplifyCFGPass (include/llvm/Transforms/Scalar/SimplifyCFG.h) will do the transformations.
 
 #### 14. Constant folding, removing identical instructions
-https://godbolt.org/z/rVLBcf 
+https://godbolt.org/z/rVLBcf
 
 - You can use GVN pass (include/llvm/Transforms/Scalar/GVN.h)
 
@@ -117,7 +117,7 @@ https://godbolt.org/z/rVLBcf
 - Don’t copy & paste patterns!!
 
 #### 16. Dead argument elimination
-https://godbolt.org/z/2a8M72  
+https://godbolt.org/z/2a8M72
 
 - You can use DeadArgumentEliminationPass (include/llvm/Transforms/IPO/DeadArgumentElimination.h)
 - You’ll need to attach keyword ‘internal’ to functions.
