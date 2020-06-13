@@ -150,12 +150,14 @@ string getRegisterNameFromInstruction(Instruction *I, std::string tempPrefix) {
 
 class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
+// NOTE: declaration of members
   vector<string> FnBody;
 //   StackFrame CurrentStackFrame;
   string resetHeapName;
   string resetStackName;
   string spSubName;
   string spOffsetName;
+  string regSwitchName;
   string tempPrefix;
   llvm::raw_ostream *fout;
 
@@ -331,13 +333,14 @@ void getSize(vector<unsigned> &indices, ArrayType *arr) {
 }
 
 public:
-  AssemblyEmitterImpl(std::vector<std::string> dummyFunctionName, llvm::raw_ostream *fout):
+// NOTE: start of Instvisit implementation
+  AssemblyEmitterImpl(std::vector<std::string> dummyFunctionName):
     resetHeapName(dummyFunctionName[0]),
     resetStackName(dummyFunctionName[1]),
     spOffsetName(dummyFunctionName[2]),
     spSubName(dummyFunctionName[3]),
-    tempPrefix(dummyFunctionName[4]),
-    fout(fout)
+    regSwitchName(dummyFunctionName[4]),
+    tempPrefix(dummyFunctionName[5])
    {}
 
   void visitFunction(Function &F) {
@@ -446,7 +449,6 @@ public:
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
     emitAssembly(DestReg, "select", {Op1, Op2, Op3});
   }
-  // TODO: avoid add 0
   void visitGetElementPtrInst(GetElementPtrInst &GEPI) {
   /*
   <result> = getelementptr <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
@@ -595,7 +597,7 @@ public:
     }
     // castDestReg.emplace(ZI.getName().str(), resolveCast(ZI));
   }
-  // TODO: Use multiplification instead of shift
+
   void visitSExtInst(SExtInst &SI) {
     // Handle this in getOperand
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
@@ -627,7 +629,7 @@ public:
         castDestReg.emplace(TI.getName().str(), Op1);
       }
     }
-
+    raiseError("Not truncing an instruction, what are you doing", &TI);
   }
   // * Support for bitCast + spOffset
   void visitBitCastInst(BitCastInst &BCI) {
@@ -661,7 +663,8 @@ public:
   }
 
   // ---- Call ----
-  // * handle dummy function here!
+  // TODO: handle dummyFunction swith register
+  // handle dummy function here!
   void visitCallInst(CallInst &CI) {
     string FnName = CI.getCalledFunction()->getName().str();
     vector<string> Args;
@@ -676,8 +679,8 @@ public:
       emitAssembly("reset", Args);
       return;
     }
-    // * handle spOffset here!
-    if (FnName == spOffsetName){
+    // handle spOffset here!
+    if (FnName == spOffsetName) {
       string DestReg = getRegisterNameFromInstruction(&CI, tempPrefix);
       string offset = getOperand(CI.getArgOperand(0)).first;
       if (starts_with(DestReg, tempPrefix)) {
@@ -691,8 +694,8 @@ public:
       // Do not emit assembly
       return;
     }
-    // * handle spSub here!
-    if (FnName == spSubName){
+    // handle spSub here!
+    if (FnName == spSubName) {
       string frameSize = getOperand(CI.getArgOperand(0)).first;
       if (!stoi(frameSize)) {
         return;
@@ -704,6 +707,11 @@ public:
         return;
       }
     }
+    // handle regSwitch here!
+    if (FnName == regSwitchName) {
+      return;
+    }
+    
     if (FnName != "malloc" && FnName != "free") {
       MallocOrFree = false;
       Args.emplace_back(FnName);
@@ -771,7 +779,7 @@ public:
 };
 
 void NewAssemblyEmitter::run(Module *DepromotedM) {
-  AssemblyEmitterImpl Em(dummyFunctionName, fout);
+  AssemblyEmitterImpl Em(dummyFunctionName);
   unsigned TotalStackUsage = 0;
   for (auto &F : *DepromotedM) {
     if (F.isDeclaration())

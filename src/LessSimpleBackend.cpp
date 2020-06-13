@@ -409,7 +409,7 @@ public:
         }
     }
     Registers(tuple<Function*, LessSimpleBackend*, vector<Instruction*>, vector<bool>> save):
-    F(get<0>(save)),Backend(get<1>(save)),regs(get<2>(save)),syncFlags(get<3>(save)){} 
+    F(get<0>(save)),Backend(get<1>(save)),regs(get<2>(save)),syncFlags(get<3>(save)){}
     tuple<Function*, LessSimpleBackend*, vector<Instruction*>, vector<bool>> getSave(){
         return make_tuple<>(
             F, Backend, regs, syncFlags
@@ -664,7 +664,7 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
             initRegs[i] != finalRegs[i] &&
             usedAfter(initRegs[i], BB.getTerminator(), tempPrefix)){
             if(finalRegs[i]!=nullptr &&
-                usedAfter(finalRegs[i], BB.getTerminator(), tempPrefix) && 
+                usedAfter(finalRegs[i], BB.getTerminator(), tempPrefix) &&
                 stackMap.count(finalRegs[i])==0){
                 regs->storeToFrame(finalRegs[i], frame, BB.getTerminator(), i+1);
             }
@@ -1016,7 +1016,7 @@ void LessSimpleBackend::depromoteReg(Function &F){
     // outs()<<F;
     depGEP(F);
     regAlloc(F);
-    // outs()<<F; 
+    // outs()<<F;
     depAlloca(F);
     insertRst(F);
     placeSpSub(F);
@@ -1067,6 +1067,8 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     string rstSName = getUniqueFnName("__resetStack", M);
     string spOffsetName = getUniqueFnName("__spOffset", M);
     string spSubName = getUniqueFnName("__spSub", M);
+    // TODO: add a name here!!
+    string regSwitchName = getUniqueFnName("", M);
 
     Type *VoidTy = Type::getVoidTy(M.getContext());
     PointerType *I8PtrTy = PointerType::getInt8PtrTy(M.getContext());
@@ -1082,6 +1084,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     rstS = Function::Create(rstTy, Function::ExternalLinkage, rstSName, M);
     spOffset = Function::Create(spOffsetTy, Function::ExternalLinkage, spOffsetName, M);
     spSub = Function::Create(spSubTy, Function::ExternalLinkage, spSubName, M);
+    // TODO: add regSwitch function here!
 
     malloc = nullptr;
     main = nullptr;
@@ -1115,7 +1118,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
 
     // Now, let's emit assembly!
     vector<std::string> dummyFunctionName = {
-        rstHName, rstSName, spOffsetName, spSubName, tempPrefix };
+        rstHName, rstSName, spOffsetName, spSubName, regSwitchName, tempPrefix };
     error_code EC;
     raw_ostream *os =
         outputFile == "-" ? &outs() : new raw_fd_ostream(outputFile, EC);
