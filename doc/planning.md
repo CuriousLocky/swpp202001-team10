@@ -77,7 +77,7 @@ According to the original plan, Alfiya Mussabecova was responsible for integrati
 | Refinement of new backend | Hexiang Geng |
 | Refinement of new backend | Minghang Li |
 | Existing LLVM optimization integration | Minghang Li, Jasmine Abtahi Yasaman |
-| Finish `malloc` to `alloca` (if possible) | Alfiya Mussabecova |
+| Finish `malloc` to `alloca` (if possible) | All team members |
 
 Since this is not a Sprint, the limitation on integrating existing LLVM optimization is assumed to be removed. We'll try to integrate as many existing LLVM optimizations as possible. Most likely we'll integrate the following passes:
 

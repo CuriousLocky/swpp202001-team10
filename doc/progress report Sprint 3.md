@@ -14,8 +14,8 @@ This is the Progress report for Sprint 3.
       - [`1`, `2`, `4` byte data type stack storage support](#1-2-4-byte-data-type-stack-storage-support)
     - [Cost change](#cost-change)
   - [`malloc` to `alloca`](#malloc-to-alloca)
-    - [Development status](#development-status-1)
-    - [Future Plan](#future-plan)
+    - [Development state](#development-state)
+    - [Future plan](#future-plan)
 
 ## Backend Rework
 
@@ -223,10 +223,28 @@ Average cost improve %: 64.286%
 
 Implemented by Alfiya Mussabekova.
 
-### Development status
+### Development state
 
-The current version of optimization is causing `Segmentation Fault` in `test/prime`. It's still not working and requires further debugging.
+The assertion fail `isValidArgumentType(Params[i]) && "Not a valid type for function argument!` was due to not applying `make clean` after some changes, which was solved quickly
 
-### Future Plan
+After resolving the assertion fail, the current implementation still hasn't change any `malloc`s to `alloca`s. After looking into test cases, it seem that usually, after `malloc`, the `malloc` register is bitcasted, and then stored/loaded into new registers. The instruction used as an operand in `free` is usually not the same register as the one used by `malloc`. The following example shows clearly this issue:
 
-All team members will try to help fix the bug. If it could not be fixed, then we would not adapt this implementation.
+```llvm
+%call = call noalias i8* @malloc(i64 24) #4
+%0 = bitcast i8* %call to i64*
+store i64 %data, i64* %0, align 8
+%add.ptr = getelementptr inbounds i64, i64* %0, i64 1
+%2 = load i64, i64* %add.ptr, align 8
+%3 = inttoptr i64 %2 to i64*
+%6 = bitcast i64* %3 to i8*
+call void @free(i8* %6)
+```
+It can be observed that `%call` stores the pointer to the `malloc`ed address, but in the end it is `%6` that is freed. Therefore, this pass could not find appropriate `free` for certain `malloc` and did not change `malloc` to `alloca`.
+
+The asignee tried to make adjustment by DFS the BasickBlock tree to follow all changes of variable name of the same address (`load`, `store` and `bitcast` functions only). But her implementation is still causing Segmentation Fault. However, according to the asignee's words, she thinks that "this improvement acutally works, changes `malloc` to `alloca` in my tests, but causes error and "Stack dump", which as I understand because of recursion (after store function), but I do not know how to solve this bug. Why do I think that it works? Because "Stack dump" happens only after last test, program prints every single line from original `*.ll`."
+
+Since this pass is causing Segmentation Fault, it is not added to the `master` branch.
+
+### Future plan
+
+Other team members will try to look into this optimization and help on the implementation during the wrap-up period. If it cannot be implemented before the competition, our team would not adopt this optimization.
