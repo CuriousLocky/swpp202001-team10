@@ -19,6 +19,7 @@
 #include "llvm/Transforms/IPO/GlobalOpt.h"
 #include "Alloca2reg.h"
 #include "LessSimpleBackend.h"
+#include "TrimPass.h"
 /*****************************************************************************/
 #include <string>
 
@@ -101,7 +102,7 @@ int main(int argc, char **argv) {
   MPM.addPass(DeadArgumentEliminationPass());
   MPM.addPass(GlobalOptPass());
   //MPM.addPass(SimpleBackend(optOutput, optPrintDepromotedModule));
-
+  MPM.addPass(TrimPass());
   MPM.addPass(LessSimpleBackend(optOutput, optPrintDepromotedModule));
   MPM.run(*M, MAM);
 
