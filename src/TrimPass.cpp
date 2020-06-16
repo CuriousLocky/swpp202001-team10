@@ -12,21 +12,21 @@
 #include "llvm/IR/Module.h"
 #include "TrimPass.h"
 #include <vector>
-#include <map>
+#include <set>
 
 using namespace llvm;
 using namespace std;
 using namespace llvm::PatternMatch;
 
 vector <Function *> functions;
-map <Function *, bool> used;
+set <Function *> used;
 
 void DFS(Function *F) {
-    used[F] = true;
+    used.insert(F);
     for (auto &BB : *F)  
         for (auto &I : BB)
-            if (auto *CB = dyn_cast<CallBase>(&I))
-                if (used[CB->getCalledFunction()] == false) 
+            if (auto *CB = dyn_cast<CallInst>(&I))
+                if (used.count(CB->getCalledFunction()) == 0) 
                     DFS(CB->getCalledFunction());
                     
 
@@ -45,7 +45,7 @@ PreservedAnalyses TrimPass::run(Module &M, ModuleAnalysisManager &MAM) {
     DFS(main);
 
     for (int i = 0; i < functions.size(); ++i) {
-        if (used[functions[i]] == false) {
+        if (used.count(functions[i]) == 0) {
             Function *F = functions[i];
             F->replaceAllUsesWith(UndefValue::get((Type*)F->getType()));
             F->eraseFromParent(); 
