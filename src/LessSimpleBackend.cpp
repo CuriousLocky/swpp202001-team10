@@ -59,35 +59,50 @@ static bool containsUseOf(Instruction *user, Instruction *usee){
     return false;
 }
 static bool usedAfterDFS(
-    Instruction *I, Instruction *I_current, BasicBlock *BB,
+    Instruction *I, BasicBlock *BB,
     set<BasicBlock*> &visitedBlockSet, bool selfFlag){
-    if(visitedBlockSet.count(BB)){return false;}
+    if(visitedBlockSet.count(BB)){return 0;}
+    int distance = 1;
     for(Instruction &instOfBB : BB->getInstList()){
-        if(&instOfBB==I && selfFlag){return false;}
-        if(containsUseOf(&instOfBB, I)){return true;}
+        if(&instOfBB==I && selfFlag){return 0;}
+        if(containsUseOf(&instOfBB, I)){return distance;}
+        distance ++;
     }
+    vector<int> distanceList;
     visitedBlockSet.insert(BB);
     for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
-        if(usedAfterDFS(I, I_current, BB->getTerminator()->getSuccessor(i), visitedBlockSet, selfFlag)){return true;}
+        if(int dis = usedAfterDFS(I, BB->getTerminator()->getSuccessor(i), visitedBlockSet, selfFlag)){
+            distanceList.push_back(distance+dis);
+        }
     }
-    return false;
+    if(distanceList.size()==0){return 0;}
+    std::sort(distanceList.begin(), distanceList.end());
+    return distanceList[0];
 }
-static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=false){
+static int _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=false){
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
+    int distance = 1;
     while(walkerInst != localTerm){
-        if(walkerInst==I && selfFlag){return false;}
-        if(containsUseOf(walkerInst, I)){return true;}
+        if(walkerInst==I && selfFlag){return 0;}
+        if(containsUseOf(walkerInst, I)){return distance;}
         walkerInst = walkerInst->getNextNode();
+        distance ++;
     }
     set<BasicBlock*> visitedBlockSet;
+    vector<int> distanceList;
     for(int i = 0; i < localTerm->getNumSuccessors(); i++){
-        if(usedAfterDFS(I, I_current, localTerm->getSuccessor(i), visitedBlockSet, selfFlag)){return true;}
+        if(int dis = usedAfterDFS(I, localTerm->getSuccessor(i), visitedBlockSet, selfFlag)){
+            distanceList.push_back(dis+distance);
+        }
     }
-    return false;
+    if(distanceList.size()==0){return 0;}
+    std::sort(distanceList.begin(), distanceList.end());
+    return distanceList[0];
 }
-static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=true){
+static int usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=true){
     vector<Instruction*> searchList;
+    vector<int> distanceList;
     // searchList.push_back(I);
     for(User *user : I->users()){
         if(CastInst *CI = dyn_cast<CastInst>(user)){
@@ -96,11 +111,17 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix,
             }
         }
     }
-    if(_usedAfter(I, I_current, tempPrefix, selfFlag)){return true;}
-    for(Instruction *searchI : searchList){
-        if(_usedAfter(searchI, I_current, tempPrefix)){return true;}
+    if(int dis = _usedAfter(I, I_current, tempPrefix, selfFlag)){
+        distanceList.push_back(dis);
     }
-    return false;
+    for(Instruction *searchI : searchList){
+        if(int dis = _usedAfter(searchI, I_current, tempPrefix)){
+            distanceList.push_back(dis);
+        }
+    }
+    if(distanceList.size()==0){return 0;}
+    std::sort(distanceList.begin(), distanceList.end());
+    return distanceList[0];
 }
 
 // Return sizeof(T) in bytes.
