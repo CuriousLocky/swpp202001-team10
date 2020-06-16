@@ -26,6 +26,9 @@ test: sf-compiler-tests
 obj/LessSimpleBackend.o: src/LessSimpleBackend.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+obj/TrimPass.o: src/TrimPass.cpp $(DEPS)
+	@$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 obj/NewAssemblyEmitter.o: src/NewAssemblyEmitter.cpp $(DEPS)
 	@$(CXX) $(CXXFLAGS) -c -o $@ $<
 
