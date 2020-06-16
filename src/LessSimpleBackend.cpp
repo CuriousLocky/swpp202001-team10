@@ -544,12 +544,17 @@ bool LessSimpleBackend::putOnRegs(
     if((!I->hasName()) || I->getName().startswith(tempPrefix)){
         return false;
     }
+    vector<int> emptyOperandOnRegs;
     int victimRegNum;
     bool dumpFlag = false;
     if(isUsedByItsTerminator(I)){
         victimRegNum = BR_REG;
     }else{
-        victimRegNum = regs->findVictimExcept(I, operandOnRegs);
+        if(dyn_cast<GetElementPtrInst>(I) || dyn_cast<SExtInst>(I)){
+            victimRegNum = regs->findVictimExcept(I, operandOnRegs);
+        }else{
+            victimRegNum = regs->findVictimExcept(I, emptyOperandOnRegs);
+        }
         if(victimRegNum < 0){
             victimRegNum = -victimRegNum;
             evicRegs.push_back(pair(regs->getInst(victimRegNum), victimRegNum));
