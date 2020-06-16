@@ -101,6 +101,7 @@ static int _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix,
     return distanceList[0];
 }
 static int usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=true){
+    if (I == nullptr) { return 0; }
     vector<Instruction*> searchList;
     vector<int> distanceList;
     // searchList.push_back(I);
@@ -332,27 +333,53 @@ public:
         }
     }
     int findVictimExcept(Instruction *I_current, vector<int> exceptPosList){
-        set<int>possibleRegNumSet;
+        set<int> possibleRegNumSet;
         for(int i = 1; i <= REG_SIZE; i++){
-            possibleRegNumSet.insert(i);
+            possibleRegNumSet.emplace(i);
         }
         for(int i = 0; i < exceptPosList.size(); i++){
             possibleRegNumSet.erase(exceptPosList[i]);
         }
-        tryDumpRedundant(I_current);
-        for(int possibleRegNum : possibleRegNumSet){
-            if(regs[possibleRegNum-1] == nullptr){
-                return possibleRegNum;
+
+        std::vector<std::tuple<int, bool, int>> v;
+        for (auto i : possibleRegNumSet) {
+            int d = usedAfter(regs[i-1], I_current, Backend->getTempPrefix());
+            if (!d) { return i; }
+            bool t = syncFlags[i-1];
+            std::tuple<int, bool, int> tup = make_tuple(i, t, d);
+            v.push_back(tup);
+        }
+        assert(!v.empty());
+
+        auto less = [](auto &left, auto &right) {
+        // Check if left should be selected before right
+        // Rule 1. Select "fresh" first
+        // Rule 2. Select larger usedAfter value first
+            if (get<1>(left)) {
+                if (get<1>(right)) { return get<2>(left) >= get<2>(right); }
+                else { return true; }
             }
-        }
-        for(int possibleRegNum : possibleRegNumSet){
-            if(syncFlags[possibleRegNum-1]){
-                return possibleRegNum;
+            else {
+                if (get<1>(right)) { return false; }
+                else { return get<2>(left) >= get<2>(right); }
             }
-        }
-        for(int possibleRegNum : possibleRegNumSet){
-            return -possibleRegNum;
-        }
+        };
+        std::sort(v.begin(), v.end(), less);
+
+        return get<1>(v[0]) ? get<0>(v[0]) : -get<0>(v[0]);
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     if(regs[possibleRegNum-1] == nullptr){
+        //         return possibleRegNum;
+        //     }
+        // }
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     if(syncFlags[possibleRegNum-1]){
+        //         return possibleRegNum;
+        //     }
+        // }
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     return -possibleRegNum;
+        // }
         assert(false);
     }
     Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame,
@@ -871,7 +898,7 @@ static int getPrevAccessPos(BasicBlock *BB, map<BasicBlock*, int> accessPosMap){
             return POS_UNKNOWN;
         }
     }
-    if(accessPos == POS_UNINIT){return POS_UNKNOWN;}  
+    if(accessPos == POS_UNINIT){return POS_UNKNOWN;}
     return accessPos;
 }
 

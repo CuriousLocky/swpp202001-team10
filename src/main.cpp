@@ -86,14 +86,14 @@ int main(int argc, char **argv) {
   // Function-level pass
   FunctionPassManager FPM;
   // If you want to add a function-level pass, add FPM.addPass(MyPass()) here.
-  FPM.addPass(GVN());  
+  FPM.addPass(GVN());
   FPM.addPass(ArithmeticOptimization());
   FPM.addPass(DCEPass());
   FPM.addPass(Alloca2reg());
-  
+
   // CGSCC-level pass
   CGSCCPassManager CGPM;
-  // CGPM.addPass(InlinerPass());
+//   CGPM.addPass(InlinerPass());
 
   ModulePassManager MPM;
   MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
