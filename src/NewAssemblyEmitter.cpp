@@ -269,8 +269,12 @@ void getSize(vector<unsigned> &indices, ArrayType *arr) {
   indices.emplace_back(arr->getArrayNumElements());
   if (arr->getArrayElementType()->isArrayTy()) {
     getSize(indices, dyn_cast<ArrayType>(arr->getArrayElementType()));
-  } else {
-    assert(arr->getArrayElementType()->isIntegerTy());
+  }
+  else if (arr->getArrayElementType()->isPointerTy()) {
+    indices.emplace_back(8);
+  } 
+  else {
+    // assert(arr->getArrayElementType()->isIntegerTy());
     auto tmp = arr->getArrayElementType()->getIntegerBitWidth();
     indices.emplace_back(tmp == 1 ? tmp : tmp / 8);
   }
