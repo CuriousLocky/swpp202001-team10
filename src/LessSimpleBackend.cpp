@@ -827,11 +827,15 @@ void LessSimpleBackend::placeSpSub(Function &F){
     Instruction *entryInst = entryBlock.getFirstNonPHI();
     IRBuilder<> Builder(entryInst);
     int maxStackUsage = frame->getMaxStackSize();
-    maxStackUsage = align(maxStackUsage);
+    maxStackUsage = align(maxStackUsage); // add something here, you know what
+    if (&F == main) {
+        maxStackUsage += globalVarOnStackSize;
+    }
     Builder.CreateCall(
         spSub,
         {ConstantInt::getSigned(IntegerType::getInt64Ty(F.getContext()), maxStackUsage)}
     );
+
 }
 
 void LessSimpleBackend::depGV(){
@@ -1028,6 +1032,84 @@ void LessSimpleBackend::depromoteReg(Function &F){
     delete(frame);
 }
 
+// TODO: implement GV stackify
+/*
+ * first set stackify threshold
+ * find all GV, put it into a container
+ * sort the container according to the size of the GV (ascending order)
+ * put them into another set, until the set reaches the threshold
+ * create GV map
+ * after all these, align the address, store the size of the whole stack frame
+ * modify a method of LessSimpleBackend named subSp():
+ *** In the end, check if current function is main, if it is main, add the
+ stackify frame size to the size
+*/
+void LessSimpleBackend::moveGVToStack() {
+    Instruction *firstInst = main->getEntryBlock().getFirstNonPHI();
+    IRBuilder<> Builder(firstInst);
+    unsigned addr = 10240;
+
+    const unsigned THRESHOLD = 1024;
+
+    vector<pair<GlobalValue*, unsigned>> GVList{};
+    for (GlobalValue &GV : main->getParent()->getGlobalList()) {
+        unsigned GVSize = -1;
+        Type *targetTy = GV.getType()->getPointerElementType();
+        if(targetTy->isArrayTy()){
+            GVSize = getAccessSize(targetTy);
+        } else {
+            GVSize = getAccessSize(GV.getType());
+        }
+        GVList.emplace_back(pair(&GV, GVSize));
+    }
+
+    std::sort(GVList.begin(), GVList.end(), [](auto &left, auto &right) {
+        return left.second < right.second;
+    });
+
+    unsigned totalSize = 0;
+    vector<pair<GlobalValue *, unsigned>> GVToStackList{};
+
+    for (auto GVPair : GVList) {
+        auto GV = GVPair.first; auto size = GVPair.second;
+        totalSize += size;
+
+        if (totalSize > THRESHOLD) { break; }
+        if (!GVPair.first->getType()->getPointerElementType()->isPointerTy()) {
+            GVToStackList.emplace_back(GVPair);
+        }
+    }
+
+    for (auto GVPair : GVToStackList) {
+        addr -= GVPair.second;
+        addr = (addr / 8) * 8;
+        globalVarOnStackMap[GVPair.first] = addr;
+
+        vector<Instruction*> userInstList;
+
+        for(User *user : GVPair.first->users()) {
+            if(Instruction *userI = dyn_cast<Instruction>(user)){
+                userInstList.push_back(userI);
+            }
+        }
+
+        for(Instruction *userInst : userInstList){
+            IntToPtrInst *ITPI = new IntToPtrInst(
+                ConstantInt::getSigned(
+                    IntegerType::getInt64Ty(userInst->getContext()),
+                    globalVarOnStackMap[GVPair.first]),
+                GVPair.first->getType(),
+                tempPrefix+"stackGV_"+GVPair.first->getName(),
+                userInst
+            );
+            userInst->replaceUsesOfWith(GVPair.first, ITPI);
+        }
+
+        GVPair.first->removeFromParent();
+    }
+    globalVarOnStackSize = 10240 - addr;
+}
+
 void LessSimpleBackend::buildGVMap(){
     Instruction *firstInst = main->getEntryBlock().getFirstNonPHI();
     IRBuilder<> Builder(firstInst);
@@ -1107,6 +1189,7 @@ PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
     }
     assert(main!=nullptr);
 
+    moveGVToStack();
     buildGVMap();
     depGV();
 

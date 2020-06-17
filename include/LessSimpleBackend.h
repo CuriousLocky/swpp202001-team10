@@ -31,6 +31,8 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   llvm::Function *main;
   llvm::Function *regSwitch;
   std::map<llvm::Value*, unsigned int> globalVarMap;
+  unsigned globalVarOnStackSize;
+  std::map<llvm::Value*, unsigned int> globalVarOnStackMap;
   class Registers;
   class StackFrame;
   Registers *regs;
@@ -70,6 +72,7 @@ class LessSimpleBackend : public llvm::PassInfoMixin<LessSimpleBackend> {
   void regAlloc(llvm::Function &F);
   void placeSpSub(llvm::Function &F);
   void buildGVMap();
+  void moveGVToStack();
 public:
   LessSimpleBackend(std::string outputFile, bool printDepromotedModule) :
       outputFile(outputFile), printDepromotedModule(printDepromotedModule) {}

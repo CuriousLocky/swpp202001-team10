@@ -62,16 +62,6 @@ void checkRegisterType(Instruction *I) {
 
   string name = I->getName().str();
   unsigned bw = T->isIntegerTy() ? T->getIntegerBitWidth() : 64;
-
-  // Temperarily suppress those checks
-  // if (ends_with(name, "after_trunc__") || ends_with(name, "before_zext__")) {
-  //   raiseErrorIf(!ValidIntBitwidths.count(bw) || bw == 64,
-  //                 "register should be non-64 bits", I);
-  // } else if (ends_with(name, "to_i1__")) {
-  //   raiseErrorIf(bw != 1, "register is not i1", I);
-  // } else {
-  //   raiseErrorIf(bw != 64, "register is not 64 bits", I);
-  // }
 }
 
 string getRegisterNameFromArgument(Argument *A) {
@@ -124,35 +114,10 @@ string getRegisterNameFromInstruction(Instruction *I, std::string tempPrefix) {
   return "r" + std::to_string(regid);
 }
 
-// Since allocas are eliminated in backend, StackFrame counting is unnecessary
-// class StackFrame {
-// public:
-//   unsigned UsedStackSize;
-
-//   StackFrame() : UsedStackSize(0) {}
-
-//   void subStackPtr(unsigned offset) {
-//     UsedStackSize += offset;
-//   }
-
-//   void addAlloca(AllocaInst *I) {
-//     assert(!AllocaStackOffset.count(I));
-//     AllocaStackOffset[I] = UsedStackSize;
-//     UsedStackSize += (getAccessSize(I->getAllocatedType()) + 7) / 8 * 8;
-//   }
-
-//   unsigned getStackOffset(AllocaInst *I) const {
-//     auto Itr = AllocaStackOffset.find(I);
-//     assert(Itr != AllocaStackOffset.end());
-//     return Itr->second;
-//   }
-// };
-
 class AssemblyEmitterImpl : public InstVisitor<AssemblyEmitterImpl> {
 public:
 // NOTE: declaration of members
   vector<string> FnBody;
-//   StackFrame CurrentStackFrame;
   string resetHeapName;
   string resetStackName;
   string spSubName;
@@ -285,29 +250,7 @@ private:
           visitCallInst(*CI);
           return getOperand(I);
         }
-        raiseError("Unresolved!", I);
-        // raiseError("Unresolved!", I);
-        // // limbo from here
-        // auto [DestReg, offset] = getOperand(I->getOperand(0));
-        // if(!(starts_with(DestReg, "arg") || starts_with(DestReg, "r"))) {
-        //   for (unsigned i = 0; i < FnBody.size(); ++i) {
-        //     assert(FnBody[i].size() > 0);
-        //     if (FnBody[i][0] == '.')
-        //       // Basic block
-        //       errs() << "\n  " << FnBody[i] << "\n";
-
-        //     else
-        //       // Instruction
-        //       errs() << "    " << FnBody[i] << "\n";
-        //   }
-        //   raiseError("Unresolved!", I);
-        // }
-        // if (offset != -1) {
-        //   nameOffsetMap.try_emplace(I->getName().str(), offset);
-        // } else {
-        //   castDestReg.try_emplace(I->getName().str(), DestReg);
-        // }
-        // return {DestReg, offset};
+        raiseError("Unresolved found here!", I);
       }
       else {
         assert(false && "Unknown instruction type!");
@@ -427,12 +370,6 @@ public:
     emitAssembly(DestReg, Cmd, {Op1, Op2, sz});
   }
   void visitICmpInst(ICmpInst &II) {
-    // if (ends_with(stripTrailingDigits(II.getName().str()), "to_i1__")) {
-    //   // Should be used by branch.
-    //   // Ignore this.
-    //   return;
-    // }
-
     auto [Op1, unused_1] = getOperand(II.getOperand(0));
     auto [Op2, unused_2] = getOperand(II.getOperand(1));
     string DestReg = getRegisterNameFromInstruction(&II, tempPrefix); // i1 -> i64
@@ -456,6 +393,8 @@ public:
   <result> = getelementptr inbounds <ty>, <ty>* <ptrval>{, [inrange] <ty> <idx>}*
   */
     // Get Pointer Type
+    // TODO: very complicated logic here, provide some notes for the sake of
+    // readaibility!
 
     Type *PtrTy = GEPI.getPointerOperandType();
 
@@ -463,20 +402,33 @@ public:
 
     string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
 
-    vector<unsigned> size;
-    unsigned elementByte;
-
-    if (PtrTy->getPointerElementType()->isArrayTy()) {
-      getSize(size, dyn_cast<ArrayType>(PtrTy->getPointerElementType()));
-      elementByte = size.back();
-    } else if (PtrTy->getPointerElementType()->isIntegerTy()) {
-      size = {};
+    if (PtrTy->getPointerElementType()->isIntegerTy()) {
       auto tmp = PtrTy->getPointerElementType()->getIntegerBitWidth();
-      elementByte = tmp == 1 ? tmp : tmp / 8;
-    } else if (PtrTy->getPointerElementType()->isPointerTy()) {
+      unsigned elementByte = tmp == 1 ? tmp : tmp / 8;
+      auto [Of, _] = getOperand(GEPI.getOperand(1));
+
+      if (starts_with(DestReg, tempPrefix)) { // All constants
+        GEPResolver.emplace(&GEPI,
+          std::pair<std::string, unsigned>{Ptr, stoi(Of)*elementByte});
+        return;
+      }
+      else if (starts_with(DestReg, "r")) { // Register
+        emitAssembly(DestReg, "mul", {Of, std::to_string(elementByte), "64"});
+        emitAssembly(DestReg, "add", {Ptr, DestReg, "64"});
+        GEPResolver.emplace(&GEPI,
+          std::pair<std::string, unsigned>{DestReg, -1});
+        return;
+      }
+      else {
+        raiseError("Invalid destination register", &GEPI);
+      }
+    }
+
+    else if (PtrTy->getPointerElementType()->isPointerTy()) {
       raiseErrorIf(GEPI.getNumIndices() != 1, "Too many indices", &GEPI);
       auto [Of, unused_2] = getOperand(GEPI.getOperand(1));
       string DestReg = getRegisterNameFromInstruction(&GEPI, tempPrefix);
+
       if (starts_with(DestReg, tempPrefix)) {
         GEPResolver.emplace(&GEPI,
          std::pair<std::string, unsigned>{Ptr, stoi(Of)*8});
@@ -492,27 +444,12 @@ public:
         raiseError("Invalid destination register", &GEPI);
       }
     }
-    else {
-      raiseError("Unsuported pointer type", &GEPI);
-    }
 
-    if (size.empty()) { // IntegerType, normal 1d ptr
-      auto [Of, _] = getOperand(GEPI.getOperand(1));
-      if (starts_with(DestReg, tempPrefix)) { // All constants
-        GEPResolver.emplace(&GEPI,
-          std::pair<std::string, unsigned>{Ptr, stoi(Of)*elementByte});
-      }
-      else if (starts_with(DestReg, "r")) { // Register
-        emitAssembly(DestReg, "mul", {Of, std::to_string(elementByte), "64"});
-        emitAssembly(DestReg, "add", {Ptr, DestReg, "64"});
-        GEPResolver.emplace(&GEPI,
-          std::pair<std::string, unsigned>{DestReg, -1});
-      }
-      else {
-        raiseError("Invalid destination register", &GEPI);
-      }
-    }
-    else { // ArrayType, ndarray
+    else if (PtrTy->getPointerElementType()->isArrayTy()) { // Array pointer
+      vector<unsigned> size;
+      getSize(size, dyn_cast<ArrayType>(PtrTy->getPointerElementType()));
+      unsigned elementByte = size.back();
+
       if (starts_with(DestReg, tempPrefix)) { // All constants
         unsigned offset = 0;
         vector<unsigned> indices;
@@ -535,10 +472,9 @@ public:
         GEPResolver.emplace(&GEPI,
                             std::pair<std::string, unsigned>{Ptr, offset});
       }
+
       else if (starts_with(DestReg, "r")) { // Contains registers in indices
-
         vector<string> indices;
-
         unsigned firstRegIdx = 0;
 
         for (unsigned i = 1; i < GEPI.getNumOperands(); i++) {
@@ -556,6 +492,8 @@ public:
           ini += stoi(indices[i]);
           ini *= size[i];
         }
+
+        /* Avoid add 0 and mul 0 */
         if (ini) {
           emitAssembly(DestReg, "add",
                        { std::to_string(ini), indices[firstRegIdx] ,"64" });
@@ -572,6 +510,7 @@ public:
           emitAssembly(DestReg, "mul",
                     { DestReg, std::to_string(size[j]), "64"});
         }
+        
         for (unsigned k = indices.size(); k < size.size(); k++) {
           emitAssembly(DestReg, "mul",
                     { DestReg, std::to_string(size[k]), "64"});
@@ -583,6 +522,10 @@ public:
       else {
         raiseError("Invalid destination register!", &GEPI);
       }
+    }
+
+    else {
+      raiseError("Unsuported pointer type", &GEPI);
     }
   }
 
@@ -607,14 +550,18 @@ public:
     // Handle this in getOperand
     string DestReg = getRegisterNameFromInstruction(&SI, tempPrefix);
     auto [SrcReg, _] = getOperand(SI.getOperand(0));
+
     raiseErrorIf(starts_with(DestReg, tempPrefix),
       "Unresolved register name: start with tempPrefix", &SI);
+
     raiseErrorIf(((!SI.getSrcTy()->isIntegerTy())||
                   (!SI.getDestTy()->isIntegerTy())),
                   "Unsuppored type: not integer", &SI);
+
     auto to = SI.getDestTy()->getIntegerBitWidth();
     auto from = SI.getSrcTy()->getIntegerBitWidth();
     raiseErrorIf(to - from < 0, "SExt to smaller integer type!", &SI);
+
     string facToMul = std::to_string((uint64_t)pow(2, to - from));
     string bitToShift = std::to_string(to - from);
     emitAssembly(DestReg, "mul", {SrcReg, facToMul, std::to_string(to)});
@@ -649,8 +596,6 @@ public:
 
   void visitPtrToIntInst(PtrToIntInst &PI) {
     auto [Op1, offset] = getOperand(PI.getOperand(0));
-    // string DestReg = getRegisterNameFromInstruction(&PI, tempPrefix);
-    // emitCopy(DestReg, Op1);
     if (offset != -1) {
       nameOffsetMap.emplace(PI.getName().str(), offset);
     } else {
@@ -659,8 +604,6 @@ public:
   }
   void visitIntToPtrInst(IntToPtrInst &II) {
     auto [Op1, offset] = getOperand(II.getOperand(0));
-    // string DestReg = getRegisterNameFromInstruction(&II, tempPrefix);
-    // emitCopy(DestReg, Op1);
     if (offset != -1) {
       nameOffsetMap.emplace(II.getName().str(), offset);
     } else {
@@ -746,7 +689,6 @@ public:
       emitAssembly("ret", {});
       return;
     }
-    // raiseErrorIf(RI.getReturnValue() == nullptr, "ret should have value", &RI);
     emitAssembly("ret", { getOperand(RI.getReturnValue()).first });
   }
   void visitBranchInst(BranchInst &BI) {
@@ -758,10 +700,6 @@ public:
       raiseErrorIf(!isa<ICmpInst>(BCond), msg, BCond);
 
       auto *II = dyn_cast<ICmpInst>(BCond);
-      // raiseErrorIf(II->getPredicate() != ICmpInst::ICMP_NE, msg, BCond);
-
-      // auto *ShouldBeZero = dyn_cast<ConstantInt>(II->getOperand(1));
-      // raiseErrorIf(!ShouldBeZero || ShouldBeZero->getZExtValue() != 0, msg, BCond);
 
       auto Cond = getRegisterNameFromInstruction(II, tempPrefix);
       emitAssembly("br", { Cond, (string)BI.getSuccessor(0)->getName(),
@@ -797,17 +735,8 @@ void NewAssemblyEmitter::run(Module *DepromotedM) {
     *fout << "start " << F.getName() << " " << F.arg_size() << ":\n";
 
     assert(Em.FnBody.size() > 0);
-    // raiseErrorIf(Em.CurrentStackFrame.UsedStackSize >= 10240,
-    //              "Stack usage is larger than STACK_MAX!");
-    // TotalStackUsage += Em.CurrentStackFrame.UsedStackSize;
-    // raiseErrorIf(TotalStackUsage >= 10240, "Stack usage is larger than STACK_MAX!");
 
     *fout << "  " << Em.FnBody[0] << "\n";
-    // if (Em.CurrentStackFrame.UsedStackSize > 0) {
-    //   *fout << "    ; init sp!\n";
-    //   *fout << "    sp = sub sp "
-    //         << Em.CurrentStackFrame.UsedStackSize << " 64\n";
-    // }
 
     for (unsigned i = 1; i < Em.FnBody.size(); ++i) {
       assert(Em.FnBody[i].size() > 0);
