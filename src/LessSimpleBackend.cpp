@@ -16,16 +16,12 @@
 using namespace llvm;
 using namespace std;
 
-static Value *unCast(CastInst *CI){
-    if(SExtInst *SEXTInst = dyn_cast<SExtInst>(CI)){
-        return CI;
-    }
+static Value *unCast(CastInst *CI, string tempPrefix, bool piercing=false){
+    if((!piercing) && (!CI->getName().startswith(tempPrefix))){return CI;}
     Value *operandV = CI->getOperand(0);
     if(CastInst *operandCI = dyn_cast<CastInst>(operandV)){
-        return unCast(operandCI);
-    }else{
-        return operandV;
-    }
+        return unCast(operandCI, tempPrefix);
+    }else{return operandV;}
 }
 
 static CastInst *getCastInst(Value *from, Type *to, Instruction *insertBefore){
@@ -60,18 +56,18 @@ static bool containsUseOf(Instruction *user, Instruction *usee){
 }
 static int usedAfterDFS(
     Instruction *I, BasicBlock *BB,
-    set<BasicBlock*> &visitedBlockSet, bool selfFlag){
+    set<BasicBlock*> &visitedBlockSet, Instruction* trueForm){
     if(visitedBlockSet.count(BB)){return 0;}
     int distance = 1;
     for(Instruction &instOfBB : BB->getInstList()){
-        if(&instOfBB==I && selfFlag){return 0;}
+        if(&instOfBB==trueForm){return 0;}
         if(containsUseOf(&instOfBB, I)){return distance;}
         distance ++;
     }
     vector<int> distanceList;
     visitedBlockSet.insert(BB);
     for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
-        if(int dis = usedAfterDFS(I, BB->getTerminator()->getSuccessor(i), visitedBlockSet, selfFlag)){
+        if(int dis = usedAfterDFS(I, BB->getTerminator()->getSuccessor(i), visitedBlockSet, trueForm)){
             distanceList.push_back(distance+dis);
         }
     }
@@ -79,12 +75,12 @@ static int usedAfterDFS(
     std::sort(distanceList.begin(), distanceList.end());
     return distanceList[0];
 }
-static int _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=false){
+static int _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, Instruction *trueForm){
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
     int distance = 1;
     while(walkerInst != localTerm){
-        if(walkerInst==I && selfFlag){return 0;}
+        if(walkerInst==trueForm){return 0;}
         if(containsUseOf(walkerInst, I)){return distance;}
         walkerInst = walkerInst->getNextNode();
         distance ++;
@@ -92,7 +88,7 @@ static int _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix,
     set<BasicBlock*> visitedBlockSet;
     vector<int> distanceList;
     for(int i = 0; i < localTerm->getNumSuccessors(); i++){
-        if(int dis = usedAfterDFS(I, localTerm->getSuccessor(i), visitedBlockSet, selfFlag)){
+        if(int dis = usedAfterDFS(I, localTerm->getSuccessor(i), visitedBlockSet, trueForm)){
             distanceList.push_back(dis+distance);
         }
     }
@@ -112,11 +108,12 @@ static int usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, 
             }
         }
     }
-    if(int dis = _usedAfter(I, I_current, tempPrefix, selfFlag)){
+    Instruction *trueForm = selfFlag? I : nullptr;
+    if(int dis = _usedAfter(I, I_current, tempPrefix, trueForm)){
         distanceList.push_back(dis);
     }
     for(Instruction *searchI : searchList){
-        if(int dis = _usedAfter(searchI, I_current, tempPrefix)){
+        if(int dis = _usedAfter(searchI, I_current, tempPrefix, trueForm)){
             distanceList.push_back(dis);
         }
     }
@@ -367,20 +364,6 @@ public:
         std::sort(v.begin(), v.end(), less);
 
         return get<1>(v[0]) ? get<0>(v[0]) : -get<0>(v[0]);
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     if(regs[possibleRegNum-1] == nullptr){
-        //         return possibleRegNum;
-        //     }
-        // }
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     if(syncFlags[possibleRegNum-1]){
-        //         return possibleRegNum;
-        //     }
-        // }
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     return -possibleRegNum;
-        // }
-        assert(false);
     }
     Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame,
         Instruction *InsertBefore, int regNum){
@@ -512,9 +495,7 @@ void LessSimpleBackend::loadOperands(
         for(int i = 0; i < I->getNumOperands(); i++){
             Value* operand = I->getOperand(i);
             if(CastInst *CI = dyn_cast<CastInst>(operand)){
-                if(CI->getName().startswith(tempPrefix)){
-                    operand = unCast(CI);
-                }
+                operand = unCast(CI, tempPrefix);
             }
             if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
                 if(!operand_I->getName().startswith(tempPrefix)){
@@ -576,12 +557,12 @@ void LessSimpleBackend::loadOperands(
         }
 }
 
-static bool isUsedByItsTerminator(Instruction *I){
+static bool isUsedByItsTerminator(Instruction *I, string tempPrefix){
     Instruction *term = I->getParent()->getTerminator();
     for(int i = 0; i < term->getNumOperands(); i++){
         Value *operandV = term->getOperand(i);
-        if(auto*CI = dyn_cast<CastInst>(operandV)){operandV=unCast(CI);}
-        if(I == term->getOperand(i)){return true;}
+        if(auto*CI = dyn_cast<CastInst>(operandV)){operandV=unCast(CI, tempPrefix);}
+        if(I == operandV){return true;}
     }
     return false;
 }
@@ -595,7 +576,7 @@ bool LessSimpleBackend::putOnRegs(
     vector<int> emptyOperandOnRegs;
     int victimRegNum;
     bool dumpFlag = false;
-    if(isUsedByItsTerminator(I)){
+    if(isUsedByItsTerminator(I, tempPrefix)){
         victimRegNum = BR_REG;
     }else{
         if(dyn_cast<GetElementPtrInst>(I) || dyn_cast<SExtInst>(I)){
@@ -698,9 +679,35 @@ void LessSimpleBackend::regAlloc(Function &F){
     regAlloc(BBE, BBvisited);
 }
 
+static int zeroPromiseLen(Value* V){
+    if(dyn_cast<llvm::BinaryOperator>(V) ||
+        dyn_cast<LoadInst>(V) ||
+        dyn_cast<CmpInst>(V) ||
+        dyn_cast<PHINode>(V)){
+        return 64-getAccessSize(V->getType());
+    }else if(ConstantInt *C = dyn_cast<ConstantInt>(V)){
+        int64_t content = C->getZExtValue();
+        int result = 64;
+        for(int i = 0; i < 64; i++){
+            if(content==0){return result;}
+            content = content>>1;
+            result--;
+        }
+        return result;
+    }
+    return 0;
+}
+
 void LessSimpleBackend::depCast(CastInst *CI){
-    if(SExtInst *SEXTInst = dyn_cast<SExtInst>(CI)){
-        return;
+    if(dyn_cast<SExtInst>(CI)){return;}
+    if(dyn_cast<ZExtInst>(CI)){
+        Value *sourceV = CI->getOperand(0);
+        if(CastInst *sourceCI = dyn_cast<CastInst>(sourceV)){
+            sourceV = unCast(sourceCI, tempPrefix);
+        }
+        int zeroPromise = zeroPromiseLen(sourceV);
+        int zeroPromiseNeeded = 64 - getAccessSize(CI->getSrcTy());
+        if(zeroPromise < zeroPromiseNeeded){return;}
     }
     CI->setName(tempPrefix+CI->getName());
 }
@@ -774,14 +781,14 @@ void LessSimpleBackend::phiUpdatePatch(set<Instruction*> &newPhiSet){
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
     Value *ptr = GEPI->getOperand(0);
     if(CastInst *CI = dyn_cast<CastInst>(ptr)){
-        ptr = unCast(CI);}
+        ptr = unCast(CI, tempPrefix);}
     if(dyn_cast<AllocaInst>(ptr) ||
         dyn_cast<Constant>(ptr)){
         if(ptr->hasName() && !(ptr->getName().startswith(tempPrefix))){return;}
         for(int i = 1; i < GEPI->getNumOperands(); i++){
             Value *operandV = GEPI->getOperand(i);
             if(CastInst *CI = dyn_cast<CastInst>(operandV)){
-                operandV = unCast(CI);}
+                operandV = unCast(CI, tempPrefix);}
             if(Constant *C = dyn_cast<Constant>(operandV)){
             }else{return; }
         }
@@ -843,7 +850,7 @@ int LessSimpleBackend::getAccessPos(Value *V){
     }else if(LoadInst *LI = dyn_cast<LoadInst>(V)){
         return getAccessPos(LI->getOperand(0));
     }else if(CastInst *CastI = dyn_cast<CastInst>(V)){
-        return getAccessPos(unCast(CastI));
+        return getAccessPos(unCast(CastI, tempPrefix, true));
     }else if(GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(V)){
         return getAccessPos(GEPI->getOperand(0));
     }else if(ConstantInt *CInt = dyn_cast<ConstantInt>(V)){

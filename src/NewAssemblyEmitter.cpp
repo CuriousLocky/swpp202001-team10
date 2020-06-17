@@ -589,14 +589,18 @@ public:
   // ---- Casts ----
   void visitZExtInst(ZExtInst &ZI) {
     // This test should pass.
-    (void)getRegisterNameFromInstruction(&ZI, tempPrefix);
+    auto DestReg = getRegisterNameFromInstruction(&ZI, tempPrefix);
     auto [Op1, offset] = getOperand(ZI.getOperand(0));
-    if (offset != -1) {
-      nameOffsetMap.emplace(ZI.getName().str(), offset);
-    } else {
-      castDestReg.emplace(ZI.getName().str(), Op1);
+    if (starts_with(DestReg, tempPrefix)) { // start with temp, penetrate through
+      if (offset != -1) {
+        nameOffsetMap.emplace(ZI.getName().str(), offset);
+      } else {
+        castDestReg.emplace(ZI.getName().str(), Op1);
+      }
+    } else { // not start with temp
+      uint64_t Mask = (1llu << (ZI.getSrcTy()->getIntegerBitWidth())) - 1;
+      emitAssembly(DestReg, "and", {Op1, std::to_string(Mask), "64"});
     }
-    // castDestReg.emplace(ZI.getName().str(), resolveCast(ZI));
   }
 
   void visitSExtInst(SExtInst &SI) {
@@ -713,7 +717,7 @@ public:
     if (FnName == regSwitchName) {
       return;
     }
-    
+
     if (FnName != "malloc" && FnName != "free") {
       MallocOrFree = false;
       Args.emplace_back(FnName);
