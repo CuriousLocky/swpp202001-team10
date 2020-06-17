@@ -1075,7 +1075,9 @@ void LessSimpleBackend::moveGVToStack() {
         totalSize += size;
 
         if (totalSize > THRESHOLD) { break; }
-        GVToStackList.emplace_back(GVPair);
+        if (!GVPair.first->getType()->getPointerElementType()->isPointerTy()) {
+            GVToStackList.emplace_back(GVPair);
+        }
     }
 
     for (auto GVPair : GVToStackList) {
