@@ -598,7 +598,7 @@ public:
         castDestReg.emplace(ZI.getName().str(), Op1);
       }
     } else { // not start with temp
-      uint64_t Mask = (1llu << (ZI.getSrcTy()->getIntegerBitWidth()) - 1);
+      uint64_t Mask = (1llu << (ZI.getSrcTy()->getIntegerBitWidth())) - 1;
       emitAssembly(DestReg, "and", {Op1, std::to_string(Mask), "64"});
     }
   }
