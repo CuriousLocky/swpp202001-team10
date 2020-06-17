@@ -59,35 +59,51 @@ static bool containsUseOf(Instruction *user, Instruction *usee){
     return false;
 }
 static bool usedAfterDFS(
-    Instruction *I, Instruction *I_current, BasicBlock *BB,
+    Instruction *I, BasicBlock *BB,
     set<BasicBlock*> &visitedBlockSet, bool selfFlag){
-    if(visitedBlockSet.count(BB)){return false;}
+    if(visitedBlockSet.count(BB)){return 0;}
+    int distance = 1;
     for(Instruction &instOfBB : BB->getInstList()){
-        if(&instOfBB==I && selfFlag){return false;}
-        if(containsUseOf(&instOfBB, I)){return true;}
+        if(&instOfBB==I && selfFlag){return 0;}
+        if(containsUseOf(&instOfBB, I)){return distance;}
+        distance ++;
     }
+    vector<int> distanceList;
     visitedBlockSet.insert(BB);
     for(int i = 0; i < BB->getTerminator()->getNumSuccessors(); i++){
-        if(usedAfterDFS(I, I_current, BB->getTerminator()->getSuccessor(i), visitedBlockSet, selfFlag)){return true;}
+        if(int dis = usedAfterDFS(I, BB->getTerminator()->getSuccessor(i), visitedBlockSet, selfFlag)){
+            distanceList.push_back(distance+dis);
+        }
     }
-    return false;
+    if(distanceList.size()==0){return 0;}
+    std::sort(distanceList.begin(), distanceList.end());
+    return distanceList[0];
 }
-static bool _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=false){
+static int _usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=false){
     Instruction *localTerm = I_current->getParent()->getTerminator();
     Instruction *walkerInst = I_current;
+    int distance = 1;
     while(walkerInst != localTerm){
-        if(walkerInst==I && selfFlag){return false;}
-        if(containsUseOf(walkerInst, I)){return true;}
+        if(walkerInst==I && selfFlag){return 0;}
+        if(containsUseOf(walkerInst, I)){return distance;}
         walkerInst = walkerInst->getNextNode();
+        distance ++;
     }
     set<BasicBlock*> visitedBlockSet;
+    vector<int> distanceList;
     for(int i = 0; i < localTerm->getNumSuccessors(); i++){
-        if(usedAfterDFS(I, I_current, localTerm->getSuccessor(i), visitedBlockSet, selfFlag)){return true;}
+        if(int dis = usedAfterDFS(I, localTerm->getSuccessor(i), visitedBlockSet, selfFlag)){
+            distanceList.push_back(dis+distance);
+        }
     }
-    return false;
+    if(distanceList.size()==0){return 0;}
+    std::sort(distanceList.begin(), distanceList.end());
+    return distanceList[0];
 }
-static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=true){
+static int usedAfter(Instruction *I, Instruction *I_current, string tempPrefix, bool selfFlag=true){
+    if (I == nullptr) { return 0; }
     vector<Instruction*> searchList;
+    vector<int> distanceList;
     // searchList.push_back(I);
     for(User *user : I->users()){
         if(CastInst *CI = dyn_cast<CastInst>(user)){
@@ -96,11 +112,17 @@ static bool usedAfter(Instruction *I, Instruction *I_current, string tempPrefix,
             }
         }
     }
-    if(_usedAfter(I, I_current, tempPrefix, selfFlag)){return true;}
-    for(Instruction *searchI : searchList){
-        if(_usedAfter(searchI, I_current, tempPrefix)){return true;}
+    if(int dis = _usedAfter(I, I_current, tempPrefix, selfFlag)){
+        distanceList.push_back(dis);
     }
-    return false;
+    for(Instruction *searchI : searchList){
+        if(int dis = _usedAfter(searchI, I_current, tempPrefix)){
+            distanceList.push_back(dis);
+        }
+    }
+    if(distanceList.size()==0){return 0;}
+    std::sort(distanceList.begin(), distanceList.end());
+    return distanceList[0];
 }
 
 // Return sizeof(T) in bytes.
@@ -311,27 +333,53 @@ public:
         }
     }
     int findVictimExcept(Instruction *I_current, vector<int> exceptPosList){
-        set<int>possibleRegNumSet;
+        set<int> possibleRegNumSet;
         for(int i = 1; i <= REG_SIZE; i++){
-            possibleRegNumSet.insert(i);
+            possibleRegNumSet.emplace(i);
         }
         for(int i = 0; i < exceptPosList.size(); i++){
             possibleRegNumSet.erase(exceptPosList[i]);
         }
-        tryDumpRedundant(I_current);
-        for(int possibleRegNum : possibleRegNumSet){
-            if(regs[possibleRegNum-1] == nullptr){
-                return possibleRegNum;
+
+        std::vector<std::tuple<int, bool, int>> v;
+        for (auto i : possibleRegNumSet) {
+            int d = usedAfter(regs[i-1], I_current, Backend->getTempPrefix());
+            if (!d) { return i; }
+            bool t = syncFlags[i-1];
+            std::tuple<int, bool, int> tup = make_tuple(i, t, d);
+            v.push_back(tup);
+        }
+        assert(!v.empty());
+
+        auto less = [](auto &left, auto &right) {
+        // Check if left should be selected before right
+        // Rule 1. Select "fresh" first
+        // Rule 2. Select larger usedAfter value first
+            if (get<1>(left)) {
+                if (get<1>(right)) { return get<2>(left) >= get<2>(right); }
+                else { return true; }
             }
-        }
-        for(int possibleRegNum : possibleRegNumSet){
-            if(syncFlags[possibleRegNum-1]){
-                return possibleRegNum;
+            else {
+                if (get<1>(right)) { return false; }
+                else { return get<2>(left) >= get<2>(right); }
             }
-        }
-        for(int possibleRegNum : possibleRegNumSet){
-            return -possibleRegNum;
-        }
+        };
+        std::sort(v.begin(), v.end(), less);
+
+        return get<1>(v[0]) ? get<0>(v[0]) : -get<0>(v[0]);
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     if(regs[possibleRegNum-1] == nullptr){
+        //         return possibleRegNum;
+        //     }
+        // }
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     if(syncFlags[possibleRegNum-1]){
+        //         return possibleRegNum;
+        //     }
+        // }
+        // for(int possibleRegNum : possibleRegNumSet){
+        //     return -possibleRegNum;
+        // }
         assert(false);
     }
     Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame,
