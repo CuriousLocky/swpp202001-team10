@@ -483,12 +483,20 @@ void LessSimpleBackend::removeInst(Instruction *I){
     I->deleteValue();
 }
 
+static Value *uncastGEP(GetElementPtrInst *GEPI, string tempPrefix){
+    if(!GEPI->getName().startswith(tempPrefix)){return GEPI;}
+    Value *operand = GEPI->getOperand(0);
+    if(GetElementPtrInst *operandGEP = dyn_cast<GetElementPtrInst>(operand)){
+        return uncastGEP(operandGEP, tempPrefix);
+    }
+    return operand;
+}
+
 void LessSimpleBackend::loadOperands(
     Instruction *I, vector<pair<Instruction*, int>> &evicRegs,
     vector<int> &operandOnRegs){
-        if(I->getParent()->getTerminator() == I){
-            return;
-        }
+        if(I->getParent()->getTerminator() == I){return;}
+        // localGEP(I);
         vector<Instruction*> toMoveToRegs;
         vector<Instruction*> relatedInstList;
         map<Instruction*, Value*>relatedInstMap;
@@ -501,6 +509,14 @@ void LessSimpleBackend::loadOperands(
                 if(!operand_I->getName().startswith(tempPrefix)){
                     relatedInstList.push_back(operand_I);
                     relatedInstMap[operand_I] = I->getOperand(i);
+                }else if(GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(operand_I)){
+                    Value *target = uncastGEP(GEPI, tempPrefix);
+                    if(CastInst *CI = dyn_cast<CastInst>(target)){
+                        target = unCast(CI, tempPrefix);
+                    }
+                    if(Instruction *targetI = dyn_cast<Instruction>(target)){
+                        relatedInstList.push_back(targetI);
+                    }
                 }
             }
         }
@@ -791,21 +807,26 @@ void LessSimpleBackend::phiUpdatePatch(set<Instruction*> &newPhiSet){
 }
 
 void LessSimpleBackend::depGEP(GetElementPtrInst *GEPI){
-    Value *ptr = GEPI->getOperand(0);
-    if(CastInst *CI = dyn_cast<CastInst>(ptr)){
-        ptr = unCast(CI, tempPrefix);}
-    if(dyn_cast<AllocaInst>(ptr) ||
-        dyn_cast<Constant>(ptr)){
-        if(ptr->hasName() && !(ptr->getName().startswith(tempPrefix))){return;}
-        for(int i = 1; i < GEPI->getNumOperands(); i++){
-            Value *operandV = GEPI->getOperand(i);
-            if(CastInst *CI = dyn_cast<CastInst>(operandV)){
-                operandV = unCast(CI, tempPrefix);}
-            if(Constant *C = dyn_cast<Constant>(operandV)){
-            }else{return; }
+    if(!GEPI->hasAllConstantIndices()){return;}
+    for(User* user : GEPI->users()){
+        if(Instruction *userI = dyn_cast<Instruction>(user)){
+            if(!(dyn_cast<LoadInst>(userI) || dyn_cast<StoreInst>(userI))){continue;}
+            int operandNum = (dyn_cast<LoadInst>(userI))?0:1;
+            if(GEPI != userI->getOperand(operandNum)){continue;}
+            vector<Value*> indiceList;
+            for(int i=1; i < GEPI->getNumOperands(); i++){
+                indiceList.push_back(GEPI->getOperand(i));
+            }
+            IRBuilder<> Builder(userI);
+            Value *newGEP = Builder.CreateGEP(
+                GEPI->getOperand(0),
+                indiceList,
+                tempPrefix+GEPI->getName()
+            );
+            userI->replaceUsesOfWith(GEPI, newGEP);
         }
-        GEPI->setName(tempPrefix + GEPI->getName());
     }
+    if(GEPI->getNumUses() == 0){removeInst(GEPI);}
 }
 
 void LessSimpleBackend::depGEP(Function &F){
