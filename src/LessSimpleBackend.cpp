@@ -58,7 +58,7 @@ static bool containsUseOf(Instruction *user, Instruction *usee){
     }
     return false;
 }
-static bool usedAfterDFS(
+static int usedAfterDFS(
     Instruction *I, BasicBlock *BB,
     set<BasicBlock*> &visitedBlockSet, bool selfFlag){
     if(visitedBlockSet.count(BB)){return 0;}
