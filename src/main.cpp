@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
 
   // CGSCC-level pass
   CGSCCPassManager CGPM;
-//   CGPM.addPass(InlinerPass());
+  CGPM.addPass(InlinerPass());
 
   ModulePassManager MPM;
   MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
