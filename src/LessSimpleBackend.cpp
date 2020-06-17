@@ -346,7 +346,7 @@ public:
             std::tuple<int, bool, int> tup = make_tuple(i, t, d);
             v.push_back(tup);
         }
-        assert(!v.empty());
+        if(v.empty()){return -BR_REG;}
 
         auto less = [](auto &left, auto &right) {
         // Check if left should be selected before right
@@ -420,7 +420,7 @@ public:
         return make_tuple<>(F, Backend, regs, syncFlags);
     }
     int findOnRegs(Instruction* I){
-        for(int i = 0; i < REG_SIZE_ALL; i++){
+        for(int i = 0; i < REG_SIZE; i++){
             if(regs[i] == I){return i+1;}
         }
         return -1;
@@ -647,7 +647,6 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
         putOnRegs(&I, evicRegs, operandOnRegs);
     }
     vector<Instruction*> finalRegs = regs->getRegs();
-    IRBuilder<> termBuilder(BB.getTerminator());
     for(int i = 0; i < REG_SIZE; i++){
         if(initRegs[i] != nullptr &&
             initRegs[i] != finalRegs[i] &&
@@ -663,6 +662,20 @@ void LessSimpleBackend::regAlloc(BasicBlock &BB, set<BasicBlock*> &BBvisited){
             regs->loadToReg(initRegs[i], frame, BB.getTerminator(), i+1);
         }
     }
+    for(int i = 0; i < BB.getTerminator()->getNumOperands(); i++){
+        if(Instruction *br_cond = dyn_cast<Instruction>(BB.getTerminator()->getOperand(i))){
+            if(CastInst *brcCI = dyn_cast<CastInst>(br_cond)){
+                br_cond = dyn_cast<Instruction>(unCast(brcCI, tempPrefix));
+            }
+            if(regs->findOnRegs(br_cond) > 0){break;}
+            if(regs->getInst(BR_REG) != br_cond){
+                regs->loadToReg(br_cond, frame, BB.getTerminator(), BR_REG);
+                regs->setInst(br_cond, BR_REG);
+                break;
+            }
+        }
+    }
+
     Registers *originalRegs = this->regs;
     auto save = regs->getSave();
     for(int i = 0; i < BB.getTerminator()->getNumSuccessors(); i++){
@@ -774,7 +787,6 @@ void LessSimpleBackend::phiUpdatePatch(set<Instruction*> &newPhiSet){
             stackMap[newPhi],
             newPhi->getNextNode()
         );
-        // outs()<<*newPhi->getParent();
     }
 }
 
