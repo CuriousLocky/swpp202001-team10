@@ -850,7 +850,7 @@ static int getPrevAccessPos(BasicBlock *BB, map<BasicBlock*, int> accessPosMap){
             return POS_UNKNOWN;
         }
     }
-    if(accessPos == POS_UNINIT){return POS_UNKNOWN;}  
+    if(accessPos == POS_UNINIT){return POS_UNKNOWN;}
     return accessPos;
 }
 
@@ -960,7 +960,9 @@ void LessSimpleBackend::buildGVMap(){
     Instruction *firstInst = main->getEntryBlock().getFirstNonPHI();
     IRBuilder<> Builder(firstInst);
     unsigned int addr = 20480;
-    for(GlobalValue &GV : main->getParent()->getGlobalList()){
+    bool hasGV = false;
+    for(GlobalValue &GV : main->getParent()->getGlobalList()) {
+        hasGV = true;
         unsigned int GVSize = -1;
         Type *targetTy = GV.getType()->getPointerElementType();
         if(targetTy->isArrayTy()){
@@ -968,14 +970,19 @@ void LessSimpleBackend::buildGVMap(){
         }else{
             GVSize = getAccessSize(GV.getType());
         }
-        Builder.CreateCall(
-            malloc,
-            {ConstantInt::getSigned(IntegerType::getInt64Ty(main->getContext()), GVSize)},
-            GV.getName()+"_pos"
-        );
         globalVarMap[&GV] = addr;
         addr += align(GVSize);
     }
+    if (hasGV) {
+        Builder.CreateCall(
+            malloc,
+            { ConstantInt::getSigned(
+                IntegerType::getInt64Ty(main->getContext()),
+                (addr - 20480))},
+            "all_GV_pos"
+        );
+    }
+
 }
 
 PreservedAnalyses LessSimpleBackend::run(Module &M, ModuleAnalysisManager &MAM){
