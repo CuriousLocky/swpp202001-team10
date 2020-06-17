@@ -16,9 +16,8 @@
 using namespace llvm;
 using namespace std;
 
-static Value *unCast(CastInst *CI, string tempPrefix){
-    if(!CI->getName().startswith(tempPrefix)){return CI;}
-    // if(SExtInst *SEXTInst = dyn_cast<SExtInst>(CI)){return CI;}
+static Value *unCast(CastInst *CI, string tempPrefix, bool piercing=false){
+    if((!piercing) && (!CI->getName().startswith(tempPrefix))){return CI;}
     Value *operandV = CI->getOperand(0);
     if(CastInst *operandCI = dyn_cast<CastInst>(operandV)){
         return unCast(operandCI, tempPrefix);
@@ -365,20 +364,6 @@ public:
         std::sort(v.begin(), v.end(), less);
 
         return get<1>(v[0]) ? get<0>(v[0]) : -get<0>(v[0]);
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     if(regs[possibleRegNum-1] == nullptr){
-        //         return possibleRegNum;
-        //     }
-        // }
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     if(syncFlags[possibleRegNum-1]){
-        //         return possibleRegNum;
-        //     }
-        // }
-        // for(int possibleRegNum : possibleRegNumSet){
-        //     return -possibleRegNum;
-        // }
-        assert(false);
     }
     Instruction *loadToReg(Instruction *IOnStack, StackFrame *frame,
         Instruction *InsertBefore, int regNum){
@@ -511,9 +496,6 @@ void LessSimpleBackend::loadOperands(
             Value* operand = I->getOperand(i);
             if(CastInst *CI = dyn_cast<CastInst>(operand)){
                 operand = unCast(CI, tempPrefix);
-                // if(CI->getName().startswith(tempPrefix)){
-                //     operand = unCast(CI);
-                // }
             }
             if(Instruction* operand_I = dyn_cast<Instruction>(operand)){
                 if(!operand_I->getName().startswith(tempPrefix)){
@@ -580,7 +562,7 @@ static bool isUsedByItsTerminator(Instruction *I, string tempPrefix){
     for(int i = 0; i < term->getNumOperands(); i++){
         Value *operandV = term->getOperand(i);
         if(auto*CI = dyn_cast<CastInst>(operandV)){operandV=unCast(CI, tempPrefix);}
-        if(I == term->getOperand(i)){return true;}
+        if(I == operandV){return true;}
     }
     return false;
 }
@@ -868,7 +850,7 @@ int LessSimpleBackend::getAccessPos(Value *V){
     }else if(LoadInst *LI = dyn_cast<LoadInst>(V)){
         return getAccessPos(LI->getOperand(0));
     }else if(CastInst *CastI = dyn_cast<CastInst>(V)){
-        return getAccessPos(unCast(CastI, tempPrefix));
+        return getAccessPos(unCast(CastI, tempPrefix, true));
     }else if(GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(V)){
         return getAccessPos(GEPI->getOperand(0));
     }else if(ConstantInt *CInt = dyn_cast<ConstantInt>(V)){
