@@ -5,7 +5,7 @@
 
 This is Team 10's code repo of the course project for [Principles and Practices of Software Development](https://github.com/snu-sf-class/swpp202001) @ [Seoul National University](https://en.snu.ac.kr/). This project is an improved version of the naive compiler provided in [snu-sf-class/swpp202001-compiler](https://github.com/snu-sf-class/swpp202001-compiler), which converts LLVM IR to SWPP assembly.
 
-Project collaborators are Jasmine Abtahi ([YPH95](https://github.com/YPH95)), Alfiya Mussabekova ([alphy1](https://github.com/alphy1)), Hexiang Geng ([CuriousLocky](https://github.com/CuriousLocky)) and Minghang Li ([Matchy](https://github.com/matchy233)).
+Project collaborators are Jasmine Abtahi ([YPH95](https://github.com/YPH95)), [alphy1](https://github.com/alphy1), Hexiang Geng ([CuriousLocky](https://github.com/CuriousLocky)) and Minghang Li ([Matchy](https://github.com/matchy233)).
 
 ## Build and Run the project
 
